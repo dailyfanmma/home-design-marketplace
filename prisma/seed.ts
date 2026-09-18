@@ -1,7 +1,9 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 
-const prisma = new PrismaClient();
+const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL ?? "file:./dev.db" });
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
   const [amy, raj] = await Promise.all([
@@ -99,7 +101,6 @@ async function main() {
       { entryId: submission.entries[0].id, voterId: mo.id },
       { entryId: submission.entries[1].id, voterId: amy.id },
     ],
-    skipDuplicates: true,
   });
 
   await prisma.submission.create({
@@ -178,7 +179,6 @@ async function main() {
 
   await prisma.vote.createMany({
     data: [{ entryId: greenerySubmission.entries[0].id, voterId: amy.id }],
-    skipDuplicates: true,
   });
 
   // Reconcile seeded credit balances with the votes/entries above: amy voted
