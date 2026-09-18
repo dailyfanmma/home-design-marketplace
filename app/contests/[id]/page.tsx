@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { castVote, awardWinner } from "@/lib/actions";
+import { VOTE_COST } from "@/lib/credits";
 
 export default async function ContestPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -14,6 +15,7 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
     include: {
       homeowner: true,
       booking: true,
+      event: true,
       entries: {
         include: { designer: true, productLinks: true, votes: true },
         orderBy: { createdAt: "asc" },
@@ -26,6 +28,7 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
   const entries = [...submission.entries].sort((a, b) => b.votes.length - a.votes.length);
   const isOwner = user?.id === submission.homeownerId;
   const isOpen = submission.status === "OPEN";
+  const canAffordVote = (user?.credits ?? 0) >= VOTE_COST;
 
   return (
     <div className="space-y-8">
@@ -34,9 +37,17 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
           <Image src={submission.photoUrl} alt={submission.title} fill className="object-cover" unoptimized />
         </div>
         <div className="space-y-2">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold">{submission.title}</h1>
             <span className="rounded-full bg-black/5 px-2 py-0.5 text-xs font-medium">{submission.status}</span>
+            {submission.event && (
+              <Link
+                href={`/events/${submission.event.id}`}
+                className="rounded-full bg-[var(--accent)]/10 px-2 py-0.5 text-xs font-medium text-[var(--accent)]"
+              >
+                {submission.event.theme ?? submission.event.title}
+              </Link>
+            )}
           </div>
           <div className="text-sm text-black/50">
             {submission.roomType.replace("_", " ")} · started by {submission.homeowner.name}
@@ -108,14 +119,20 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
                       <form action={castVote.bind(null, entry.id, submission.id)}>
                         <button
                           type="submit"
-                          disabled={hasVoted}
+                          disabled={hasVoted || !canAffordVote}
+                          title={!hasVoted && !canAffordVote ? "Not enough credits" : undefined}
                           className={`rounded-md px-3 py-1.5 text-sm ${
-                            hasVoted ? "bg-black/10 text-black/40" : "border border-black/20"
+                            hasVoted || !canAffordVote ? "bg-black/10 text-black/40" : "border border-black/20"
                           }`}
                         >
-                          {hasVoted ? "Voted" : "Vote"}
+                          {hasVoted ? "Voted" : `Vote (${VOTE_COST} credit)`}
                         </button>
                       </form>
+                    )}
+                    {isOpen && user && !hasVoted && !canAffordVote && (
+                      <Link href="/credits" className="text-xs underline text-black/50">
+                        Buy credits to vote
+                      </Link>
                     )}
 
                     {isOpen && isOwner && (

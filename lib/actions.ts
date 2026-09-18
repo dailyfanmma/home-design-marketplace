@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, setCurrentUser, clearCurrentUser } from "@/lib/auth";
 import { splitBookingFee } from "@/lib/fees";
+import { spendCredits, VOTE_COST, REVIEW_COST, CREDIT_PACKS } from "@/lib/credits";
 import type { RoomType } from "@prisma/client";
 
 export async function loginAs(userId: string) {
@@ -26,23 +27,36 @@ export async function createSubmission(formData: FormData) {
   const description = String(formData.get("description") ?? "").trim();
   const photoUrl = String(formData.get("photoUrl") ?? "").trim();
   const budgetRaw = String(formData.get("budget") ?? "").trim();
+  const eventId = String(formData.get("eventId") ?? "").trim() || null;
 
   if (!title || !description || !photoUrl) {
     throw new Error("Title, description, and a photo URL are required.");
   }
 
-  const submission = await prisma.submission.create({
-    data: {
-      homeownerId: user.id,
-      title,
-      roomType,
-      description,
-      photoUrl,
-      budget: budgetRaw ? Math.round(Number(budgetRaw)) : null,
-    },
+  const event = eventId ? await prisma.event.findUnique({ where: { id: eventId } }) : null;
+  if (eventId && (!event || event.status !== "ACTIVE")) {
+    throw new Error("That contest isn't open for entries right now.");
+  }
+
+  const submission = await prisma.$transaction(async (tx) => {
+    if (event && event.entryCost > 0) {
+      await spendCredits(tx, user.id, event.entryCost, "EVENT_ENTRY_SPEND", `Entered "${event.title}"`);
+    }
+    return tx.submission.create({
+      data: {
+        homeownerId: user.id,
+        eventId: event?.id,
+        title,
+        roomType,
+        description,
+        photoUrl,
+        budget: budgetRaw ? Math.round(Number(budgetRaw)) : null,
+      },
+    });
   });
 
   revalidatePath("/contests");
+  revalidatePath("/events");
   redirect(`/contests/${submission.id}`);
 }
 
@@ -83,10 +97,14 @@ export async function castVote(entryId: string, submissionId: string) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Log in to vote.");
 
-  await prisma.vote.upsert({
+  const existing = await prisma.vote.findUnique({
     where: { entryId_voterId: { entryId, voterId: user.id } },
-    create: { entryId, voterId: user.id },
-    update: {},
+  });
+  if (existing) return; // already voted -- no-op, don't charge twice
+
+  await prisma.$transaction(async (tx) => {
+    await spendCredits(tx, user.id, VOTE_COST, "VOTE_SPEND", "Vote cast");
+    await tx.vote.create({ data: { entryId, voterId: user.id } });
   });
 
   revalidatePath(`/contests/${submissionId}`);
@@ -150,16 +168,63 @@ export async function submitReview(bookingId: string, formData: FormData) {
   const comment = String(formData.get("comment") ?? "").trim();
   if (rating < 1 || rating > 5) throw new Error("Rating must be between 1 and 5.");
 
-  await prisma.review.create({
-    data: {
-      bookingId,
-      authorId: user.id,
-      targetId: booking.designerId,
-      rating,
-      comment,
-    },
+  await prisma.$transaction(async (tx) => {
+    await spendCredits(tx, user.id, REVIEW_COST, "REVIEW_SPEND", "Left a review");
+    await tx.review.create({
+      data: {
+        bookingId,
+        authorId: user.id,
+        targetId: booking.designerId,
+        rating,
+        comment,
+      },
+    });
   });
 
   revalidatePath(`/bookings/${bookingId}`);
   revalidatePath(`/designers/${booking.designerId}`);
+}
+
+export async function buyCredits(packIndex: number) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Log in to buy credits.");
+
+  const pack = CREDIT_PACKS[packIndex];
+  if (!pack) throw new Error("Unknown credit pack.");
+
+  // Stubbed checkout -- a real version charges pack.priceUsd via Stripe
+  // before granting credits. See README "What's stubbed".
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: user.id }, data: { credits: { increment: pack.credits } } }),
+    prisma.creditTransaction.create({
+      data: {
+        userId: user.id,
+        amount: pack.credits,
+        type: "PURCHASE",
+        note: `Purchased ${pack.credits} credits for $${pack.priceUsd}`,
+      },
+    }),
+  ]);
+
+  revalidatePath("/credits");
+}
+
+export async function addShowcaseItem(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user || user.role !== "DESIGNER") throw new Error("Only designer accounts have a showcase.");
+
+  const title = String(formData.get("title") ?? "").trim();
+  const imageUrl = String(formData.get("imageUrl") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  const externalUrl = String(formData.get("externalUrl") ?? "").trim() || null;
+
+  if (!title || !imageUrl || !description) {
+    throw new Error("Title, image URL, and description are required.");
+  }
+
+  await prisma.showcaseItem.create({
+    data: { designerId: user.id, title, imageUrl, description, externalUrl },
+  });
+
+  revalidatePath(`/designers/${user.id}`);
 }

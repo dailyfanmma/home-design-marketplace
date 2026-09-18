@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 export default async function ContestsPage() {
   const submissions = await prisma.submission.findMany({
     orderBy: { createdAt: "desc" },
-    include: { homeowner: true, entries: { include: { votes: true } } },
+    include: { homeowner: true, event: true, entries: { include: { votes: true } } },
   });
 
   return (
@@ -34,6 +34,7 @@ export default async function ContestsPage() {
               </div>
               <div className="text-xs uppercase tracking-wide text-black/50">
                 {s.roomType.replace("_", " ")}
+                {s.event ? ` · ${s.event.theme ?? s.event.title}` : ""}
               </div>
               <div className="text-sm text-black/60">
                 {s.entries.length} {s.entries.length === 1 ? "entry" : "entries"} · by {s.homeowner.name}

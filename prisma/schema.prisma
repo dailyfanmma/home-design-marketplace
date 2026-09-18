@@ -34,6 +34,26 @@ enum BookingStatus {
   COMPLETED
 }
 
+enum EventKind {
+  DAILY
+  THEMED
+}
+
+enum EventStatus {
+  UPCOMING
+  ACTIVE
+  CLOSED
+}
+
+enum CreditTxType {
+  SIGNUP_BONUS
+  PURCHASE
+  VOTE_SPEND
+  POST_SPEND
+  REVIEW_SPEND
+  EVENT_ENTRY_SPEND
+}
+
 model User {
   id        String   @id @default(cuid())
   name      String
@@ -41,11 +61,14 @@ model User {
   role      Role
   bio       String?
   avatarUrl String?
+  credits   Int      @default(10)
   createdAt DateTime @default(now())
 
   submissions Submission[] @relation("HomeownerSubmissions")
   entries     Entry[]
   votes       Vote[]
+  showcaseItems ShowcaseItem[]
+  creditTransactions CreditTransaction[]
 
   reviewsAuthored Review[] @relation("ReviewAuthor")
   reviewsReceived Review[] @relation("ReviewTarget")
@@ -54,10 +77,50 @@ model User {
   bookingsAsHomeowner Booking[] @relation("HomeownerBookings")
 }
 
+/// A time-boxed contest cycle -- the daily contest, or a themed event like
+/// "Rainbow Week" or "Greenery Challenge". Submissions can optionally enter one.
+model Event {
+  id        String      @id @default(cuid())
+  title     String
+  theme     String?
+  kind      EventKind
+  entryCost Int         @default(0)
+  opensAt   DateTime
+  closesAt  DateTime
+  status    EventStatus @default(UPCOMING)
+  createdAt DateTime    @default(now())
+
+  submissions Submission[]
+}
+
+model CreditTransaction {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id])
+  amount    Int
+  type      CreditTxType
+  note      String?
+  createdAt DateTime     @default(now())
+}
+
+/// A designer's real past work, shown on their profile alongside contest entries.
+model ShowcaseItem {
+  id          String   @id @default(cuid())
+  designerId  String
+  designer    User     @relation(fields: [designerId], references: [id])
+  title       String
+  imageUrl    String
+  description String
+  externalUrl String?
+  createdAt   DateTime @default(now())
+}
+
 model Submission {
   id          String        @id @default(cuid())
   homeownerId String
   homeowner   User          @relation("HomeownerSubmissions", fields: [homeownerId], references: [id])
+  eventId     String?
+  event       Event?        @relation(fields: [eventId], references: [id])
   title       String
   roomType    RoomType
   description String

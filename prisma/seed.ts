@@ -114,6 +114,112 @@ async function main() {
     },
   });
 
+  const now = new Date();
+  const dailyEvent = await prisma.event.create({
+    data: {
+      title: "Today's Daily Contest",
+      kind: "DAILY",
+      entryCost: 3,
+      opensAt: now,
+      closesAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+      status: "ACTIVE",
+    },
+  });
+
+  const greeneryEvent = await prisma.event.create({
+    data: {
+      title: "Greenery Challenge",
+      theme: "Greenery",
+      kind: "THEMED",
+      entryCost: 5,
+      opensAt: now,
+      closesAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+      status: "ACTIVE",
+    },
+  });
+
+  await prisma.event.create({
+    data: {
+      title: "Rainbow Room Week",
+      theme: "Rainbow",
+      kind: "THEMED",
+      entryCost: 5,
+      opensAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+      closesAt: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
+      status: "UPCOMING",
+    },
+  });
+
+  const greenerySubmission = await prisma.submission.create({
+    data: {
+      homeownerId: raj.id,
+      eventId: greeneryEvent.id,
+      title: "Living room needs plants and life",
+      roomType: "LIVING_ROOM",
+      description: "Beige box living room. Want it to feel like a jungle, within reason.",
+      photoUrl: "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?w=1200",
+      budget: 1200,
+      status: "OPEN",
+      entries: {
+        create: [
+          {
+            designerId: mo.id,
+            imageUrl: "https://images.unsplash.com/photo-1600121848594-d8644e57abab?w=1200",
+            description: "Floor-to-ceiling shelving stuffed with monstera, pothos, and a fiddle leaf fig anchor plant.",
+            productLinks: {
+              create: [{ label: "Fiddle leaf fig", url: "https://example.com/fiddle-leaf", price: 65 }],
+            },
+          },
+        ],
+      },
+    },
+    include: { entries: true },
+  });
+
+  await prisma.vote.createMany({
+    data: [{ entryId: greenerySubmission.entries[0].id, voterId: amy.id }],
+    skipDuplicates: true,
+  });
+
+  // Reconcile seeded credit balances with the votes/entries above: amy voted
+  // twice (kitchen + greenery), raj voted once and paid to enter Greenery,
+  // mo voted once. Every decrement here has a matching CreditTransaction row.
+  await prisma.user.update({ where: { id: amy.id }, data: { credits: { decrement: 2 } } });
+  await prisma.user.update({ where: { id: raj.id }, data: { credits: { decrement: 1 + greeneryEvent.entryCost } } });
+  await prisma.user.update({ where: { id: mo.id }, data: { credits: { decrement: 1 } } });
+  await prisma.creditTransaction.createMany({
+    data: [
+      { userId: raj.id, amount: -greeneryEvent.entryCost, type: "EVENT_ENTRY_SPEND", note: `Entered "${greeneryEvent.title}"` },
+      { userId: raj.id, amount: -1, type: "VOTE_SPEND", note: "Vote cast" },
+      { userId: mo.id, amount: -1, type: "VOTE_SPEND", note: "Vote cast" },
+      { userId: amy.id, amount: -1, type: "VOTE_SPEND", note: "Vote cast" },
+      { userId: amy.id, amount: -1, type: "VOTE_SPEND", note: "Vote cast" },
+    ],
+  });
+
+  await prisma.submission.update({
+    where: { id: submission.id },
+    data: { eventId: dailyEvent.id },
+  });
+
+  await prisma.showcaseItem.createMany({
+    data: [
+      {
+        designerId: dana.id,
+        title: "Full kitchen remodel, Oak Park bungalow",
+        imageUrl: "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=1200",
+        description: "Real client project, 2025. Shaker cabinets, quartz counters, $18k budget.",
+        externalUrl: "https://example.com/portfolio/oak-park",
+      },
+      {
+        designerId: luca.id,
+        title: "Studio apartment color drenching",
+        imageUrl: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200",
+        description: "Turned a 400 sq ft rental into a bold, colorful home on a $2k budget.",
+      },
+    ],
+  });
+
   console.log("Seeded:", { homeowners: [amy.email, raj.email], designers: [dana.email, luca.email, mo.email] });
 }
 

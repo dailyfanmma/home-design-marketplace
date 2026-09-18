@@ -22,8 +22,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </Link>
             <nav className="flex items-center gap-4 text-sm">
               <Link href="/contests">Contests</Link>
+              <Link href="/events">Events</Link>
               {user ? (
                 <>
+                  <Link href="/credits" className="rounded-full bg-black/5 px-2.5 py-1 font-medium">
+                    {user.credits} credits
+                  </Link>
                   <span className="text-black/50">
                     {user.name} · {user.role.toLowerCase()}
                   </span>
