@@ -1,18 +1,34 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { buyCredits } from "@/lib/actions";
-import { CREDIT_PACKS, VOTE_COST, REVIEW_COST } from "@/lib/credits";
+import { CREDIT_PACKS, VOTE_COST, REVIEW_COST, REFERRAL_SIGNUP_BONUS, REFERRAL_PURCHASE_BONUS_PCT } from "@/lib/credits";
 
 export default async function CreditsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const transactions = await prisma.creditTransaction.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-    take: 20,
+  const [transactions, referrals] = await Promise.all([
+    prisma.creditTransaction.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+    prisma.user.findMany({
+      where: { referredById: user.id },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, name: true, createdAt: true },
+    }),
+  ]);
+
+  const referralEarnings = await prisma.creditTransaction.aggregate({
+    where: { userId: user.id, type: { in: ["REFERRAL_SIGNUP_BONUS", "REFERRAL_PURCHASE_BONUS"] } },
+    _sum: { amount: true },
   });
+
+  const host = (await headers()).get("host");
+  const referralLink = host ? `${host.includes("localhost") ? "http" : "https"}://${host}/signup?ref=${user.id}` : null;
 
   return (
     <div className="max-w-lg space-y-8">
@@ -41,6 +57,26 @@ export default async function CreditsPage() {
             </form>
           ))}
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <h2 className="text-lg font-semibold">Refer friends</h2>
+        <p className="text-sm text-black/60">
+          Get {REFERRAL_SIGNUP_BONUS} credits when someone signs up with your link, plus{" "}
+          {REFERRAL_PURCHASE_BONUS_PCT * 100}% of the credits any time they buy a pack.
+        </p>
+        {referralLink && <input readOnly value={referralLink} className="input font-mono text-xs" />}
+        <div className="text-sm text-black/70">
+          {referrals.length} {referrals.length === 1 ? "person" : "people"} referred ·{" "}
+          {referralEarnings._sum.amount ?? 0} credits earned from referrals
+        </div>
+        {referrals.length > 0 && (
+          <ul className="space-y-1 text-sm text-black/60">
+            {referrals.map((r) => (
+              <li key={r.id}>{r.name}</li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {transactions.length > 0 && (

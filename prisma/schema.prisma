@@ -52,6 +52,8 @@ enum CreditTxType {
   REVIEW_SPEND
   EVENT_ENTRY_SPEND
   GENERATE_CONCEPT_SPEND
+  REFERRAL_SIGNUP_BONUS
+  REFERRAL_PURCHASE_BONUS
 }
 
 model User {
@@ -67,6 +69,12 @@ model User {
   /// awardWinner in lib/actions.ts.
   isAiGenerated Boolean @default(false)
   createdAt DateTime @default(now())
+
+  /// Who referred this user, if anyone. A user's own referral link is just
+  /// /signup?ref=<their id> -- no separate code needed. See referrals below.
+  referredById String?
+  referredBy   User?   @relation("Referrals", fields: [referredById], references: [id])
+  referrals    User[]  @relation("Referrals")
 
   submissions Submission[] @relation("HomeownerSubmissions")
   entries     Entry[]

@@ -37,6 +37,14 @@ Deliberately kept rougher than a real designer's entry (see
 `lib/aiConceptGenerator.ts`) so it's a teaser, not a replacement for the
 marketplace's actual value.
 
+Every user has a referral link (`/signup?ref=<their id>`, shown on `/credits`):
+referring someone gets you `REFERRAL_SIGNUP_BONUS` credits when they sign up,
+plus `REFERRAL_PURCHASE_BONUS_PCT` of every credit pack they ever buy after
+that. Since there was previously no way to create a *new* account at all
+(only "log in as" a seeded user), this also added a minimal real `/signup`
+form — name, email, account type, no password, same MVP-auth spirit as
+`/login`.
+
 This is an MVP scaffold: real auth, real payments, and real image generation
 are stubbed out so the core contest → vote → hire → review loop, and the
 credit economy around it, are fully functional and easy to demo.
@@ -79,6 +87,7 @@ the stand-in for real auth (see "Next steps" below).
 - `ShowcaseItem` — a designer's real past project, shown on their profile alongside contest entries
 - `User.isAiGenerated` — flags a seeded AI-persona designer; see "AI-persona designers" above
 - `AiConcept` — a homeowner's own instant, private AI concept for their `Submission`; see above
+- `User.referredById` — self-relation to whoever referred this user; see "referral" above
 
 ## What's stubbed, and what real building looks like next
 
@@ -130,3 +139,9 @@ the stand-in for real auth (see "Next steps" below).
   that needs a real fulfillment path behind it first (e.g. a vetted human
   designer/contractor actually executes the AI concept) — flipping the
   guard without that would mean charging someone for work nobody delivers.
+- **Referrals have no abuse protection** — no email verification, so nothing
+  stops someone signing up five throwaway accounts through their own link to
+  farm the signup bonus, and the purchase bonus repeats on every pack a
+  referral ever buys (not just their first) with no cap. Fine for a demo;
+  before this handles real money, add email verification and decide whether
+  the purchase bonus should be first-purchase-only or capped.

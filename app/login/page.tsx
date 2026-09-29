@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { loginAs } from "@/lib/actions";
 
@@ -13,7 +14,11 @@ export default async function LoginPage() {
       <p className="text-sm text-black/60">
         MVP stand-in for real auth: pick a seeded account to try each role. Run{" "}
         <code>npm run db:seed</code> if this list is empty. (AI-persona designers also submit
-        entries but aren&rsquo;t listed here — nobody logs in as one.)
+        entries but aren&rsquo;t listed here — nobody logs in as one.) New here?{" "}
+        <Link href="/signup" className="underline">
+          Sign up
+        </Link>{" "}
+        instead.
       </p>
       <ul className="space-y-2">
         {users.map((u) => (

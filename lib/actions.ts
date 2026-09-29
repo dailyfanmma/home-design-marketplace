@@ -5,12 +5,49 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, setCurrentUser, clearCurrentUser } from "@/lib/auth";
 import { splitBookingFee } from "@/lib/fees";
-import { spendCredits, VOTE_COST, REVIEW_COST, GENERATE_CONCEPT_COST, CREDIT_PACKS } from "@/lib/credits";
+import {
+  spendCredits,
+  grantCredits,
+  VOTE_COST,
+  REVIEW_COST,
+  GENERATE_CONCEPT_COST,
+  CREDIT_PACKS,
+  REFERRAL_SIGNUP_BONUS,
+  REFERRAL_PURCHASE_BONUS_PCT,
+} from "@/lib/credits";
 import { generateConcept, CONCEPT_STYLES, type ConceptStyle } from "@/lib/aiConceptGenerator";
 import type { RoomType } from "@prisma/client";
 
 export async function loginAs(userId: string) {
   await setCurrentUser(userId);
+  redirect("/contests");
+}
+
+export async function signUp(formData: FormData) {
+  const name = String(formData.get("name") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const role = String(formData.get("role") ?? "HOMEOWNER") as "HOMEOWNER" | "DESIGNER";
+  const referrerId = String(formData.get("ref") ?? "").trim() || null;
+
+  if (!name || !email) throw new Error("Name and email are required.");
+  if (role !== "HOMEOWNER" && role !== "DESIGNER") throw new Error("Pick a valid account type.");
+
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) throw new Error("An account with that email already exists -- try logging in instead.");
+
+  const referrer = referrerId ? await prisma.user.findUnique({ where: { id: referrerId } }) : null;
+
+  const user = await prisma.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: { name, email, role, referredById: referrer?.id },
+    });
+    if (referrer) {
+      await grantCredits(tx, referrer.id, REFERRAL_SIGNUP_BONUS, "REFERRAL_SIGNUP_BONUS", `${name} signed up via your referral link`);
+    }
+    return created;
+  });
+
+  await setCurrentUser(user.id);
   redirect("/contests");
 }
 
@@ -219,17 +256,22 @@ export async function buyCredits(packIndex: number) {
 
   // Stubbed checkout -- a real version charges pack.priceUsd via Stripe
   // before granting credits. See README "What's stubbed".
-  await prisma.$transaction([
-    prisma.user.update({ where: { id: user.id }, data: { credits: { increment: pack.credits } } }),
-    prisma.creditTransaction.create({
-      data: {
-        userId: user.id,
-        amount: pack.credits,
-        type: "PURCHASE",
-        note: `Purchased ${pack.credits} credits for $${pack.priceUsd}`,
-      },
-    }),
-  ]);
+  await prisma.$transaction(async (tx) => {
+    await grantCredits(tx, user.id, pack.credits, "PURCHASE", `Purchased ${pack.credits} credits for $${pack.priceUsd}`);
+
+    if (user.referredById) {
+      const bonus = Math.round(pack.credits * REFERRAL_PURCHASE_BONUS_PCT);
+      if (bonus > 0) {
+        await grantCredits(
+          tx,
+          user.referredById,
+          bonus,
+          "REFERRAL_PURCHASE_BONUS",
+          `${user.name} (your referral) bought ${pack.credits} credits`
+        );
+      }
+    }
+  });
 
   revalidatePath("/credits");
 }
