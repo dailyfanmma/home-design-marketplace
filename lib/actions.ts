@@ -18,6 +18,8 @@ import {
 import { generateConcept, CONCEPT_STYLES, type ConceptStyle } from "@/lib/aiConceptGenerator";
 import { syncLifecycle } from "@/lib/lifecycle";
 import { notify, markAllNotificationsRead } from "@/lib/notifications";
+import { unlockAchievement } from "@/lib/achievements";
+import { FLAIRS, isPurchasable, type FlairKey } from "@/lib/flair";
 import { SUBMISSION_DEFAULT_DURATION_MS } from "@/lib/contestDuration";
 import type { RoomType } from "@prisma/client";
 
@@ -47,6 +49,7 @@ export async function signUp(formData: FormData) {
     if (referrer) {
       await grantCredits(tx, referrer.id, REFERRAL_SIGNUP_BONUS, "REFERRAL_SIGNUP_BONUS", `${name} signed up via your referral link`);
       await notify(tx, referrer.id, "REFERRAL_SIGNUP", `${name} signed up using your referral link -- you earned ${REFERRAL_SIGNUP_BONUS} credits.`, "/credits");
+      await unlockAchievement(tx, referrer.id, "FIRST_REFERRAL");
     }
     return created;
   });
@@ -88,7 +91,7 @@ export async function createSubmission(formData: FormData) {
     if (event && event.entryCost > 0) {
       await spendCredits(tx, user.id, event.entryCost, "EVENT_ENTRY_SPEND", `Entered "${event.title}"`);
     }
-    return tx.submission.create({
+    const created = await tx.submission.create({
       data: {
         homeownerId: user.id,
         eventId: event?.id,
@@ -100,6 +103,8 @@ export async function createSubmission(formData: FormData) {
         closesAt,
       },
     });
+    await unlockAchievement(tx, user.id, "FIRST_SUBMISSION");
+    return created;
   });
 
   revalidatePath("/contests");
@@ -145,6 +150,7 @@ export async function createEntry(submissionId: string, formData: FormData) {
       `${user.name} submitted a concept for "${submission.title}".`,
       `/contests/${submissionId}`
     );
+    await unlockAchievement(tx, user.id, "FIRST_ENTRY");
     return created;
   });
 
@@ -197,6 +203,7 @@ export async function castVote(entryId: string, submissionId: string) {
     if (!entry.designer.isAiGenerated) {
       await notify(tx, entry.designerId, "NEW_VOTE", `${user.name} voted for your concept on "${submission.title}".`, `/contests/${submissionId}`);
     }
+    await unlockAchievement(tx, user.id, "FIRST_VOTE");
   });
 
   revalidatePath(`/contests/${submissionId}`);
@@ -213,6 +220,9 @@ export async function awardWinner(submissionId: string, entryId: string, formDat
   // OPEN or CLOSED can both be awarded -- judging happens after entries close.
   // AWARDED is the only truly terminal state.
   if (submission.status === "AWARDED") throw new Error("This contest was already decided.");
+  if (submission.isSystemGenerated) {
+    throw new Error("This is a Daily/Weekly Pick contest -- there's no real homeowner behind it to hire for.");
+  }
 
   const entry = await prisma.entry.findUnique({ where: { id: entryId }, include: { designer: true } });
   if (!entry || entry.submissionId !== submissionId) throw new Error("That entry doesn't belong to this contest.");
@@ -245,6 +255,7 @@ export async function awardWinner(submissionId: string, entryId: string, formDat
       `${user.name} hired you for "${submission.title}" -- $${designFee} design fee.`,
       `/bookings/${created.id}`
     );
+    await unlockAchievement(tx, entry.designerId, "FIRST_HIRE");
     return created;
   });
 
@@ -354,5 +365,44 @@ export async function markAllRead() {
 
   await markAllNotificationsRead(user.id);
   revalidatePath("/notifications");
+  revalidatePath("/", "layout");
+}
+
+export async function buyFlair(flairKey: FlairKey) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Log in to buy a flair.");
+
+  const flair = FLAIRS[flairKey];
+  if (!flair) throw new Error("Unknown flair.");
+  if (!isPurchasable(flairKey)) throw new Error("This flair can only be unlocked by earning its achievement.");
+
+  const alreadyOwned = await prisma.userFlair.findUnique({ where: { userId_flairKey: { userId: user.id, flairKey } } });
+  if (alreadyOwned) {
+    await prisma.user.update({ where: { id: user.id }, data: { equippedFlairKey: flairKey } });
+    revalidatePath("/profile");
+    return;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await spendCredits(tx, user.id, "cost" in flair ? flair.cost : 0, "FLAIR_PURCHASE", `Bought the "${flair.label}" flair`);
+    await tx.userFlair.create({ data: { userId: user.id, flairKey } });
+    await tx.user.update({ where: { id: user.id }, data: { equippedFlairKey: flairKey } });
+  });
+
+  revalidatePath("/profile");
+  revalidatePath("/", "layout");
+}
+
+export async function equipFlair(flairKey: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Log in first.");
+
+  if (flairKey) {
+    const owned = await prisma.userFlair.findUnique({ where: { userId_flairKey: { userId: user.id, flairKey } } });
+    if (!owned) throw new Error("You don't own that flair yet.");
+  }
+
+  await prisma.user.update({ where: { id: user.id }, data: { equippedFlairKey: flairKey || null } });
+  revalidatePath("/profile");
   revalidatePath("/", "layout");
 }

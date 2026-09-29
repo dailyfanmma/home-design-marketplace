@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { addShowcaseItem } from "@/lib/actions";
 import { AiBadge } from "@/components/AiBadge";
+import { ACHIEVEMENTS, type AchievementKey } from "@/lib/achievements";
+import { FLAIRS, type FlairKey } from "@/lib/flair";
 
 export default async function DesignerProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -20,6 +22,7 @@ export default async function DesignerProfilePage({ params }: { params: Promise<
       showcaseItems: { orderBy: { createdAt: "desc" } },
       bookingsAsDesigner: true,
       reviewsReceived: { include: { author: true }, orderBy: { createdAt: "desc" } },
+      achievements: true,
     },
   });
 
@@ -37,6 +40,7 @@ export default async function DesignerProfilePage({ params }: { params: Promise<
       <div className="space-y-1">
         <div className="flex items-center gap-2">
           <h1 className="text-2xl font-bold">{designer.name}</h1>
+          {designer.equippedFlairKey && <span>{FLAIRS[designer.equippedFlairKey as FlairKey]?.label}</span>}
           {designer.isAiGenerated && <AiBadge />}
         </div>
         {designer.isAiGenerated && (
@@ -52,6 +56,19 @@ export default async function DesignerProfilePage({ params }: { params: Promise<
           <span>{designer.entries.length} concepts submitted</span>
           {avgRating != null && <span>{avgRating.toFixed(1)}★ ({designer.reviewsReceived.length} reviews)</span>}
         </div>
+        {designer.achievements.length > 0 && (
+          <div className="flex flex-wrap gap-2 pt-1">
+            {designer.achievements.map((a) => {
+              const info = ACHIEVEMENTS[a.achievementKey as AchievementKey];
+              if (!info) return null;
+              return (
+                <span key={a.id} title={info.description} className="rounded-full bg-black/5 px-2 py-0.5 text-xs">
+                  {info.icon} {info.name}
+                </span>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="space-y-3">

@@ -44,6 +44,8 @@ const IMAGE_POOL: Record<RoomType, string[]> = {
     "photo-1618221195710-dd6b41faaea6",
   ],
   OUTDOOR: ["photo-1600607687939-ce8a6c25118c", "photo-1533749047139-189de3cf06d3"],
+  HOME_OFFICE: ["photo-1518481852452-9415b262eba4", "photo-1600607687920-4e2a09cf159d"],
+  ENTRYWAY: ["photo-1593642532400-2682810df593", "photo-1519710164239-da123dc03ef4"],
   OTHER: ["photo-1493809842364-78817add7ffb", "photo-1554995207-c18c203602cb"],
 };
 

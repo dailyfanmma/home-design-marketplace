@@ -18,6 +18,8 @@ enum RoomType {
   LIVING_ROOM
   BEDROOM
   OUTDOOR
+  HOME_OFFICE
+  ENTRYWAY
   OTHER
 }
 
@@ -35,6 +37,7 @@ enum BookingStatus {
 
 enum EventKind {
   DAILY
+  WEEKLY
   THEMED
 }
 
@@ -54,6 +57,8 @@ enum CreditTxType {
   GENERATE_CONCEPT_SPEND
   REFERRAL_SIGNUP_BONUS
   REFERRAL_PURCHASE_BONUS
+  DAILY_LOGIN_BONUS
+  FLAIR_PURCHASE
 }
 
 enum NotificationType {
@@ -63,6 +68,9 @@ enum NotificationType {
   ENTRY_AWARDED
   REFERRAL_SIGNUP
   REFERRAL_PURCHASE
+  DAILY_LOGIN_BONUS
+  ACHIEVEMENT_UNLOCKED
+  CONTEST_WON
 }
 
 model User {
@@ -77,7 +85,21 @@ model User {
   /// Always disclosed in the UI, and never eligible to be hired -- see
   /// awardWinner in lib/actions.ts.
   isAiGenerated Boolean @default(false)
+  /// The single house account that owns system-generated daily/weekly
+  /// contests (see lib/contestGenerator.ts). Not shown as a "real" homeowner
+  /// in any UI that implies a real person is waiting on a hire.
+  isSystemAccount Boolean @default(false)
   createdAt DateTime @default(now())
+
+  /// Daily login reward state -- see lib/loginRewards.ts. Claimed lazily
+  /// (no real cron): checked once per page load in the root layout.
+  loginStreak       Int       @default(0)
+  lastLoginRewardAt DateTime?
+
+  /// The profile flair currently displayed next to this user's name, if any.
+  /// Owned flairs are tracked in UserFlair; this just points at the
+  /// currently-equipped one. See lib/flair.ts.
+  equippedFlairKey String?
 
   /// Who referred this user, if anyone. A user's own referral link is just
   /// /signup?ref=<their id> -- no separate code needed. See referrals below.
@@ -91,6 +113,8 @@ model User {
   showcaseItems ShowcaseItem[]
   creditTransactions CreditTransaction[]
   notifications Notification[]
+  achievements UserAchievement[]
+  flairs       UserFlair[]
 
   reviewsAuthored Review[] @relation("ReviewAuthor")
   reviewsReceived Review[] @relation("ReviewTarget")
@@ -158,11 +182,41 @@ model Submission {
   /// CLOSED contest (judging happens after submissions close); only AWARDED
   /// is truly terminal.
   closesAt    DateTime
+  /// True for a room posted by the system house account rather than a real
+  /// homeowner -- see lib/contestGenerator.ts. These can never be awarded
+  /// (there's no real person to pay or to deliver work), but voting still
+  /// crowns a top entry for bragging rights + an achievement when it closes.
+  isSystemGenerated Boolean @default(false)
   createdAt   DateTime      @default(now())
 
   entries    Entry[]
   booking    Booking?
   aiConcepts AiConcept[]
+}
+
+/// Static catalog lives in lib/achievements.ts; this just records who has
+/// unlocked what, and when.
+model UserAchievement {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  achievementKey String
+  unlockedAt     DateTime @default(now())
+
+  @@unique([userId, achievementKey])
+}
+
+/// Static catalog lives in lib/flair.ts. Owning a flair (buying it with
+/// credits, or earning it via an achievement) is separate from having it
+/// equipped -- see User.equippedFlairKey.
+model UserFlair {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  flairKey   String
+  unlockedAt DateTime @default(now())
+
+  @@unique([userId, flairKey])
 }
 
 model Notification {

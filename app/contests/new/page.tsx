@@ -31,6 +31,8 @@ export default async function NewContestPage({
             <option value="LIVING_ROOM">Living room</option>
             <option value="BEDROOM">Bedroom</option>
             <option value="OUTDOOR">Outdoor</option>
+            <option value="HOME_OFFICE">Home office</option>
+            <option value="ENTRYWAY">Entryway</option>
             <option value="OTHER">Other</option>
           </select>
         </Field>

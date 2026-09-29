@@ -2,6 +2,7 @@ import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { SUBMISSION_DEFAULT_DURATION_MS } from "../lib/contestDuration";
+import { ensureSystemContests } from "../lib/contestGenerator";
 
 const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL ?? "file:./dev.db" });
 const prisma = new PrismaClient({ adapter });
@@ -60,16 +61,14 @@ async function main() {
   });
 
   const now = new Date();
-  const dailyEvent = await prisma.event.create({
-    data: {
-      title: "Today's Daily Contest",
-      kind: "DAILY",
-      entryCost: 3,
-      opensAt: now,
-      closesAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
-      status: "ACTIVE",
-    },
-  });
+
+  // Spins up the same daily (3 rooms) + weekly (2 rooms) system-generated
+  // batches a real page load would trigger lazily -- see
+  // lib/contestGenerator.ts. Amy's real kitchen submission below then enters
+  // the resulting Daily event alongside the system-posted rooms, so the demo
+  // shows real homeowner submissions and house-account contests coexisting.
+  await ensureSystemContests();
+  const dailyEvent = await prisma.event.findFirstOrThrow({ where: { kind: "DAILY" } });
 
   const greeneryEvent = await prisma.event.create({
     data: {
@@ -412,6 +411,26 @@ async function main() {
       },
     ],
   });
+
+  // --- Achievements, flair, and login streaks (demo richness) -------------
+  await prisma.userAchievement.createMany({
+    data: [
+      { userId: amy.id, achievementKey: "FIRST_SUBMISSION" },
+      { userId: amy.id, achievementKey: "FIRST_VOTE" },
+      { userId: raj.id, achievementKey: "FIRST_SUBMISSION" },
+      { userId: raj.id, achievementKey: "FIRST_VOTE" },
+      { userId: dana.id, achievementKey: "FIRST_ENTRY" },
+      { userId: luca.id, achievementKey: "FIRST_ENTRY" },
+      { userId: mo.id, achievementKey: "FIRST_ENTRY" },
+    ],
+  });
+
+  await prisma.userFlair.create({ data: { userId: dana.id, flairKey: "design_enthusiast" } });
+  await prisma.user.update({ where: { id: dana.id }, data: { equippedFlairKey: "design_enthusiast" } });
+
+  // Give Amy a short login streak, already claimed for "today" so logging in
+  // during a demo doesn't immediately double-grant a bonus.
+  await prisma.user.update({ where: { id: amy.id }, data: { loginStreak: 3, lastLoginRewardAt: now } });
 
   console.log("Seeded:", {
     homeowners: [amy.email, raj.email],

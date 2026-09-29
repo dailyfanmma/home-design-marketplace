@@ -59,6 +59,36 @@ happens after submissions close, not before. Entries, votes, contest
 closings, and referral bonuses all create a `Notification` for the relevant
 user, shown with an unread badge and on `/notifications`.
 
+There are always fresh contests running, independent of real homeowner
+activity: a house account (`contests@renoshowdown.dev`, `isSystemAccount`)
+posts 3 **Daily Pick** rooms every day (kitchen/bathroom/outdoor) and 2
+**Weekly Pick** rooms every week (living room/home office), each a stock
+photo, not a real person's request. `lib/contestGenerator.ts`'s
+`ensureSystemContests()` creates the next batch lazily the moment anyone
+loads a page after the last one's deadline -- same no-real-cron pattern as
+contest closing. Real homeowners can still enter their own room into that
+same Daily/Weekly `Event` alongside the system-posted ones (that's already
+how entering any event works). Because there's no real homeowner behind a
+system-generated room, it can never be awarded/hired -- voting instead
+crowns the top-voted entry a "Daily Champion" or "Weekly Champion"
+achievement when the contest closes (AI-persona entries are skipped; there's
+no one to award it to). Two more room categories exist now too: Home Office
+and Entryway.
+
+To make coming back worth it, there's now a full engagement layer:
+- **Daily login bonus + streak** — 1-3 credits per day (more at longer
+  streaks), claimed automatically on your first page load each calendar day
+  (`lib/loginRewards.ts`), shown as a 🔥 streak counter in the header.
+- **Achievements** (`lib/achievements.ts`, `UserAchievement`) — first vote,
+  first contest started, first concept submitted, first hire, a 7-day
+  streak, winning a Daily/Weekly Pick, and your first successful referral.
+  Shown on `/profile` (locked ones too, dimmed, so there's something to work
+  toward) and as badges on a designer's public profile.
+- **Profile flair** (`lib/flair.ts`, `UserFlair`) — a cosmetic tag shown next
+  to your name everywhere (header, entries, profile). Half are bought with
+  credits, half are unlocked free by earning their matching achievement --
+  managed from `/profile`.
+
 This is an MVP scaffold: real auth, real payments, and real image generation
 are stubbed out so the core contest → vote → hire → review loop, and the
 credit economy around it, are fully functional and easy to demo.
@@ -104,6 +134,10 @@ the stand-in for real auth (see "Next steps" below).
 - `User.referredById` — self-relation to whoever referred this user; see "referral" above
 - `Submission.closesAt` — when a contest stops accepting entries/votes; enforced by `lib/lifecycle.ts`
 - `Notification` — an in-app alert for a user (new entry, new vote, contest closed, hired, referral bonus); see above
+- `Submission.isSystemGenerated` / `User.isSystemAccount` — flags a house-posted Daily/Weekly Pick room; never hireable
+- `User.loginStreak` / `lastLoginRewardAt` — daily login bonus state; see `lib/loginRewards.ts`
+- `UserAchievement` — which of `lib/achievements.ts`'s catalog a user has unlocked, and when
+- `UserFlair` / `User.equippedFlairKey` — which of `lib/flair.ts`'s catalog a user owns and has equipped
 
 ## What's stubbed, and what real building looks like next
 
@@ -172,3 +206,18 @@ the stand-in for real auth (see "Next steps" below).
   referral ever buys (not just their first) with no cap. Fine for a demo;
   before this handles real money, add email verification and decide whether
   the purchase bonus should be first-purchase-only or capped.
+- **The daily login bonus has no anti-abuse either** — same MVP-auth gap as
+  everything else: nothing stops one person from claiming it across several
+  throwaway accounts. Not a real problem until credits represent real money.
+- **The house account's contests reuse a small stock-photo pool by category**
+  (same limitation, and same real fix, as the AI personas' images above) --
+  after a few days/weeks the same handful of photos repeat. A real version
+  wants a much larger photo library or a generated placeholder per batch.
+- **No way to reconfigure the daily/weekly categories or counts without
+  editing `lib/contestGenerator.ts`** — `DAILY_CATEGORIES`/`WEEKLY_CATEGORIES`
+  and the per-room-type pools are hardcoded. Fine at this scale; an admin
+  screen or config table would be the next step if this needs to flex often.
+- **Achievement and flair catalogs are hardcoded arrays**, not DB-driven --
+  adding a new one means a code change + redeploy, not an admin action. Fine
+  for ~8-10 of each; revisit if the catalog grows enough to want a CMS-style
+  editor.

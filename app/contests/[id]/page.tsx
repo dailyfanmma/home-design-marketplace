@@ -7,6 +7,7 @@ import { castVote, awardWinner, generateAiConcept } from "@/lib/actions";
 import { VOTE_COST, GENERATE_CONCEPT_COST } from "@/lib/credits";
 import { CONCEPT_STYLES } from "@/lib/aiConceptGenerator";
 import { AiBadge } from "@/components/AiBadge";
+import { FLAIRS, type FlairKey } from "@/lib/flair";
 
 export default async function ContestPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -45,6 +46,11 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold">{submission.title}</h1>
             <span className="rounded-full bg-black/5 px-2 py-0.5 text-xs font-medium">{submission.status}</span>
+            {submission.isSystemGenerated && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                {submission.event?.kind === "WEEKLY" ? "Weekly Pick" : "Daily Pick"}
+              </span>
+            )}
             {submission.event && (
               <Link
                 href={`/events/${submission.event.id}`}
@@ -55,10 +61,17 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
             )}
           </div>
           <div className="text-sm text-black/50">
-            {submission.roomType.replace("_", " ")} · started by {submission.homeowner.name}
+            {submission.roomType.replace("_", " ")}
+            {submission.isSystemGenerated ? " · posted by Reno Showdown" : ` · started by ${submission.homeowner.name}`}
             {submission.budget ? ` · budget $${submission.budget.toLocaleString()}` : ""}
             {isOpen && ` · closes ${submission.closesAt.toLocaleString()}`}
           </div>
+          {submission.isSystemGenerated && (
+            <p className="text-xs text-black/40">
+              A community contest, not a real homeowner&rsquo;s request -- voting crowns a winner, but
+              there&rsquo;s no hire or payment on this one.
+            </p>
+          )}
           <p className="text-black/80">{submission.description}</p>
           {isOpen && (
             <Link
@@ -166,6 +179,7 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
                       <Link href={`/designers/${entry.designerId}`} className="font-medium underline">
                         {entry.designer.name}
                       </Link>
+                      {entry.designer.equippedFlairKey && <span>{FLAIRS[entry.designer.equippedFlairKey as FlairKey]?.label}</span>}
                       {entry.designer.isAiGenerated && <AiBadge />}
                     </div>
                     <span className="text-sm font-semibold text-[var(--accent)]">

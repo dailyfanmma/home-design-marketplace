@@ -5,6 +5,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { logout } from "@/lib/actions";
 import { prisma } from "@/lib/prisma";
 import { syncLifecycle } from "@/lib/lifecycle";
+import { claimDailyLoginBonus } from "@/lib/loginRewards";
+import { FLAIRS, type FlairKey } from "@/lib/flair";
 
 export const metadata: Metadata = {
   title: "Reno Showdown",
@@ -16,10 +18,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // on any contest/event that should have closed or opened by now.
   await syncLifecycle();
 
-  const user = await getCurrentUser();
+  let user = await getCurrentUser();
+  if (user) {
+    // Same lazy pattern: no real "daily job", just check-and-claim on the
+    // first page load of each calendar day. Re-fetch afterward so the header
+    // reflects the bonus credits on the very render that granted them.
+    await claimDailyLoginBonus(user.id);
+    user = await getCurrentUser();
+  }
+
   const unreadCount = user
     ? await prisma.notification.count({ where: { userId: user.id, readAt: null } })
     : 0;
+  const equippedFlair = user?.equippedFlairKey ? FLAIRS[user.equippedFlairKey as FlairKey]?.label : null;
 
   return (
     <html lang="en">
@@ -45,9 +56,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   <Link href="/credits" className="rounded-full bg-black/5 px-2.5 py-1 font-medium">
                     {user.credits} credits
                   </Link>
-                  <span className="text-black/50">
+                  {user.loginStreak > 1 && (
+                    <span className="text-black/50" title={`${user.loginStreak}-day login streak`}>
+                      🔥{user.loginStreak}
+                    </span>
+                  )}
+                  <Link href="/profile" className="text-black/50">
                     {user.name} · {user.role.toLowerCase()}
-                  </span>
+                    {equippedFlair && <span className="ml-1">{equippedFlair}</span>}
+                  </Link>
                   <form action={logout}>
                     <button className="text-black/60 underline" type="submit">
                       Log out
