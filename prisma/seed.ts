@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { SUBMISSION_DEFAULT_DURATION_MS } from "../lib/contestDuration";
 
 const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL ?? "file:./dev.db" });
 const prisma = new PrismaClient({ adapter });
@@ -58,9 +59,47 @@ async function main() {
     create: { name: "Site Admin", email: "admin@example.com", role: "ADMIN" },
   });
 
+  const now = new Date();
+  const dailyEvent = await prisma.event.create({
+    data: {
+      title: "Today's Daily Contest",
+      kind: "DAILY",
+      entryCost: 3,
+      opensAt: now,
+      closesAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+      status: "ACTIVE",
+    },
+  });
+
+  const greeneryEvent = await prisma.event.create({
+    data: {
+      title: "Greenery Challenge",
+      theme: "Greenery",
+      kind: "THEMED",
+      entryCost: 5,
+      opensAt: now,
+      closesAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+      status: "ACTIVE",
+    },
+  });
+
+  await prisma.event.create({
+    data: {
+      title: "Rainbow Room Week",
+      theme: "Rainbow",
+      kind: "THEMED",
+      entryCost: 5,
+      opensAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+      closesAt: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
+      status: "UPCOMING",
+    },
+  });
+
   const submission = await prisma.submission.create({
     data: {
       homeownerId: amy.id,
+      eventId: dailyEvent.id,
+      closesAt: dailyEvent.closesAt,
       title: "Dark 90s kitchen needs light",
       roomType: "KITCHEN",
       description:
@@ -106,6 +145,7 @@ async function main() {
   const bathroomSubmission = await prisma.submission.create({
     data: {
       homeownerId: raj.id,
+      closesAt: new Date(now.getTime() + SUBMISSION_DEFAULT_DURATION_MS),
       title: "Builder-grade bathroom, want spa vibes",
       roomType: "BATHROOM",
       description: "Plain white tile, boring mirror. Going for a calm, warm spa feel on a modest budget.",
@@ -115,46 +155,11 @@ async function main() {
     },
   });
 
-  const now = new Date();
-  const dailyEvent = await prisma.event.create({
-    data: {
-      title: "Today's Daily Contest",
-      kind: "DAILY",
-      entryCost: 3,
-      opensAt: now,
-      closesAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
-      status: "ACTIVE",
-    },
-  });
-
-  const greeneryEvent = await prisma.event.create({
-    data: {
-      title: "Greenery Challenge",
-      theme: "Greenery",
-      kind: "THEMED",
-      entryCost: 5,
-      opensAt: now,
-      closesAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
-      status: "ACTIVE",
-    },
-  });
-
-  await prisma.event.create({
-    data: {
-      title: "Rainbow Room Week",
-      theme: "Rainbow",
-      kind: "THEMED",
-      entryCost: 5,
-      opensAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
-      closesAt: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
-      status: "UPCOMING",
-    },
-  });
-
   const greenerySubmission = await prisma.submission.create({
     data: {
       homeownerId: raj.id,
       eventId: greeneryEvent.id,
+      closesAt: greeneryEvent.closesAt,
       title: "Living room needs plants and life",
       roomType: "LIVING_ROOM",
       description: "Beige box living room. Want it to feel like a jungle, within reason.",
@@ -195,11 +200,6 @@ async function main() {
       { userId: amy.id, amount: -1, type: "VOTE_SPEND", note: "Vote cast" },
       { userId: amy.id, amount: -1, type: "VOTE_SPEND", note: "Vote cast" },
     ],
-  });
-
-  await prisma.submission.update({
-    where: { id: submission.id },
-    data: { eventId: dailyEvent.id },
   });
 
   await prisma.showcaseItem.createMany({
@@ -374,6 +374,42 @@ async function main() {
       { userId: raj.id, amount: -1, type: "VOTE_SPEND", note: "Vote cast" },
       { userId: amy.id, amount: -1, type: "VOTE_SPEND", note: "Vote cast" },
       { userId: amy.id, amount: -1, type: "VOTE_SPEND", note: "Vote cast" },
+    ],
+  });
+
+  // A few seeded notifications so /notifications isn't empty on first login.
+  await prisma.notification.createMany({
+    data: [
+      {
+        userId: amy.id,
+        type: "NEW_ENTRY",
+        message: "7 designers have entered your kitchen contest -- take a look!",
+        linkPath: `/contests/${submission.id}`,
+      },
+      {
+        userId: raj.id,
+        type: "NEW_ENTRY",
+        message: "4 designers have entered your bathroom contest.",
+        linkPath: `/contests/${bathroomSubmission.id}`,
+      },
+      {
+        userId: raj.id,
+        type: "NEW_ENTRY",
+        message: "3 designers have entered your Greenery Challenge submission.",
+        linkPath: `/contests/${greenerySubmission.id}`,
+      },
+      {
+        userId: dana.id,
+        type: "NEW_VOTE",
+        message: "Raj Patel voted for your concept on \"Dark 90s kitchen needs light\".",
+        linkPath: `/contests/${submission.id}`,
+      },
+      {
+        userId: mo.id,
+        type: "NEW_VOTE",
+        message: "Amy Chen voted for your concept on \"Living room needs plants and life\".",
+        linkPath: `/contests/${greenerySubmission.id}`,
+      },
     ],
   });
 

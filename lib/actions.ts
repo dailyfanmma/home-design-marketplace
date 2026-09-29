@@ -16,6 +16,9 @@ import {
   REFERRAL_PURCHASE_BONUS_PCT,
 } from "@/lib/credits";
 import { generateConcept, CONCEPT_STYLES, type ConceptStyle } from "@/lib/aiConceptGenerator";
+import { syncLifecycle } from "@/lib/lifecycle";
+import { notify, markAllNotificationsRead } from "@/lib/notifications";
+import { SUBMISSION_DEFAULT_DURATION_MS } from "@/lib/contestDuration";
 import type { RoomType } from "@prisma/client";
 
 export async function loginAs(userId: string) {
@@ -43,6 +46,7 @@ export async function signUp(formData: FormData) {
     });
     if (referrer) {
       await grantCredits(tx, referrer.id, REFERRAL_SIGNUP_BONUS, "REFERRAL_SIGNUP_BONUS", `${name} signed up via your referral link`);
+      await notify(tx, referrer.id, "REFERRAL_SIGNUP", `${name} signed up using your referral link -- you earned ${REFERRAL_SIGNUP_BONUS} credits.`, "/credits");
     }
     return created;
   });
@@ -57,6 +61,8 @@ export async function logout() {
 }
 
 export async function createSubmission(formData: FormData) {
+  await syncLifecycle();
+
   const user = await getCurrentUser();
   if (!user || user.role !== "HOMEOWNER") throw new Error("Only homeowners can start a contest.");
 
@@ -76,6 +82,8 @@ export async function createSubmission(formData: FormData) {
     throw new Error("That contest isn't open for entries right now.");
   }
 
+  const closesAt = event ? event.closesAt : new Date(Date.now() + SUBMISSION_DEFAULT_DURATION_MS);
+
   const submission = await prisma.$transaction(async (tx) => {
     if (event && event.entryCost > 0) {
       await spendCredits(tx, user.id, event.entryCost, "EVENT_ENTRY_SPEND", `Entered "${event.title}"`);
@@ -89,6 +97,7 @@ export async function createSubmission(formData: FormData) {
         description,
         photoUrl,
         budget: budgetRaw ? Math.round(Number(budgetRaw)) : null,
+        closesAt,
       },
     });
   });
@@ -99,6 +108,8 @@ export async function createSubmission(formData: FormData) {
 }
 
 export async function createEntry(submissionId: string, formData: FormData) {
+  await syncLifecycle();
+
   const user = await getCurrentUser();
   if (!user || user.role !== "DESIGNER") throw new Error("Only designers can submit a concept.");
 
@@ -117,14 +128,24 @@ export async function createEntry(submissionId: string, formData: FormData) {
     .map((label, i) => ({ label: label.trim(), url: urls[i]?.trim() ?? "", price: prices[i] ? Number(prices[i]) : null }))
     .filter((link) => link.label && link.url);
 
-  const entry = await prisma.entry.create({
-    data: {
-      submissionId,
-      designerId: user.id,
-      imageUrl,
-      description,
-      productLinks: { create: productLinks },
-    },
+  const entry = await prisma.$transaction(async (tx) => {
+    const created = await tx.entry.create({
+      data: {
+        submissionId,
+        designerId: user.id,
+        imageUrl,
+        description,
+        productLinks: { create: productLinks },
+      },
+    });
+    await notify(
+      tx,
+      submission.homeownerId,
+      "NEW_ENTRY",
+      `${user.name} submitted a concept for "${submission.title}".`,
+      `/contests/${submissionId}`
+    );
+    return created;
   });
 
   revalidatePath(`/contests/${submissionId}`);
@@ -132,6 +153,8 @@ export async function createEntry(submissionId: string, formData: FormData) {
 }
 
 export async function generateAiConcept(submissionId: string, formData: FormData) {
+  await syncLifecycle();
+
   const user = await getCurrentUser();
   const submission = await prisma.submission.findUnique({ where: { id: submissionId } });
   if (!user || !submission || submission.homeownerId !== user.id) {
@@ -153,29 +176,43 @@ export async function generateAiConcept(submissionId: string, formData: FormData
 }
 
 export async function castVote(entryId: string, submissionId: string) {
+  await syncLifecycle();
+
   const user = await getCurrentUser();
   if (!user) throw new Error("Log in to vote.");
+
+  const submission = await prisma.submission.findUnique({ where: { id: submissionId } });
+  if (!submission || submission.status !== "OPEN") throw new Error("Voting has closed on this contest.");
 
   const existing = await prisma.vote.findUnique({
     where: { entryId_voterId: { entryId, voterId: user.id } },
   });
   if (existing) return; // already voted -- no-op, don't charge twice
 
+  const entry = await prisma.entry.findUniqueOrThrow({ where: { id: entryId }, include: { designer: true } });
+
   await prisma.$transaction(async (tx) => {
     await spendCredits(tx, user.id, VOTE_COST, "VOTE_SPEND", "Vote cast");
     await tx.vote.create({ data: { entryId, voterId: user.id } });
+    if (!entry.designer.isAiGenerated) {
+      await notify(tx, entry.designerId, "NEW_VOTE", `${user.name} voted for your concept on "${submission.title}".`, `/contests/${submissionId}`);
+    }
   });
 
   revalidatePath(`/contests/${submissionId}`);
 }
 
 export async function awardWinner(submissionId: string, entryId: string, formData: FormData) {
+  await syncLifecycle();
+
   const user = await getCurrentUser();
   const submission = await prisma.submission.findUnique({ where: { id: submissionId } });
   if (!user || !submission || submission.homeownerId !== user.id) {
     throw new Error("Only the homeowner who started this contest can award it.");
   }
-  if (submission.status !== "OPEN") throw new Error("This contest was already decided.");
+  // OPEN or CLOSED can both be awarded -- judging happens after entries close.
+  // AWARDED is the only truly terminal state.
+  if (submission.status === "AWARDED") throw new Error("This contest was already decided.");
 
   const entry = await prisma.entry.findUnique({ where: { id: entryId }, include: { designer: true } });
   if (!entry || entry.submissionId !== submissionId) throw new Error("That entry doesn't belong to this contest.");
@@ -190,7 +227,7 @@ export async function awardWinner(submissionId: string, entryId: string, formDat
 
   const booking = await prisma.$transaction(async (tx) => {
     await tx.submission.update({ where: { id: submissionId }, data: { status: "AWARDED" } });
-    return tx.booking.create({
+    const created = await tx.booking.create({
       data: {
         submissionId,
         entryId,
@@ -201,6 +238,14 @@ export async function awardWinner(submissionId: string, entryId: string, formDat
         totalCharge,
       },
     });
+    await notify(
+      tx,
+      entry.designerId,
+      "ENTRY_AWARDED",
+      `${user.name} hired you for "${submission.title}" -- $${designFee} design fee.`,
+      `/bookings/${created.id}`
+    );
+    return created;
   });
 
   revalidatePath(`/contests/${submissionId}`);
@@ -269,6 +314,13 @@ export async function buyCredits(packIndex: number) {
           "REFERRAL_PURCHASE_BONUS",
           `${user.name} (your referral) bought ${pack.credits} credits`
         );
+        await notify(
+          tx,
+          user.referredById,
+          "REFERRAL_PURCHASE",
+          `${user.name} (your referral) bought credits -- you earned ${bonus} credits.`,
+          "/credits"
+        );
       }
     }
   });
@@ -294,4 +346,13 @@ export async function addShowcaseItem(formData: FormData) {
   });
 
   revalidatePath(`/designers/${user.id}`);
+}
+
+export async function markAllRead() {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  await markAllNotificationsRead(user.id);
+  revalidatePath("/notifications");
+  revalidatePath("/", "layout");
 }

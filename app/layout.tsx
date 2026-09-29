@@ -3,6 +3,8 @@ import Link from "next/link";
 import "./globals.css";
 import { getCurrentUser } from "@/lib/auth";
 import { logout } from "@/lib/actions";
+import { prisma } from "@/lib/prisma";
+import { syncLifecycle } from "@/lib/lifecycle";
 
 export const metadata: Metadata = {
   title: "Reno Showdown",
@@ -10,7 +12,14 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // No real cron job in this MVP -- every page load is a chance to catch up
+  // on any contest/event that should have closed or opened by now.
+  await syncLifecycle();
+
   const user = await getCurrentUser();
+  const unreadCount = user
+    ? await prisma.notification.count({ where: { userId: user.id, readAt: null } })
+    : 0;
 
   return (
     <html lang="en">
@@ -25,6 +34,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/events">Events</Link>
               {user ? (
                 <>
+                  <Link href="/notifications" className="relative">
+                    🔔
+                    {unreadCount > 0 && (
+                      <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent)] px-1 text-[10px] font-bold text-white">
+                        {unreadCount}
+                      </span>
+                    )}
+                  </Link>
                   <Link href="/credits" className="rounded-full bg-black/5 px-2.5 py-1 font-medium">
                     {user.credits} credits
                   </Link>

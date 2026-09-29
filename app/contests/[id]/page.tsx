@@ -30,7 +30,8 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
 
   const entries = [...submission.entries].sort((a, b) => b.votes.length - a.votes.length);
   const isOwner = user?.id === submission.homeownerId;
-  const isOpen = submission.status === "OPEN";
+  const isOpen = submission.status === "OPEN"; // accepting new entries/votes
+  const canAward = submission.status !== "AWARDED"; // judging can happen after entries close
   const canAffordVote = (user?.credits ?? 0) >= VOTE_COST;
   const canAffordGenerate = (user?.credits ?? 0) >= GENERATE_CONCEPT_COST;
 
@@ -56,6 +57,7 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
           <div className="text-sm text-black/50">
             {submission.roomType.replace("_", " ")} · started by {submission.homeowner.name}
             {submission.budget ? ` · budget $${submission.budget.toLocaleString()}` : ""}
+            {isOpen && ` · closes ${submission.closesAt.toLocaleString()}`}
           </div>
           <p className="text-black/80">{submission.description}</p>
           {isOpen && (
@@ -65,6 +67,13 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
             >
               Submit a concept
             </Link>
+          )}
+          {submission.status === "CLOSED" && isOwner && (
+            <p className="mt-2 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+              Voting has closed. {entries.length > 0
+                ? "Pick a winner below to hire them, or leave it as inspiration."
+                : "No entries came in this time -- you can start a new contest any time."}
+            </p>
           )}
           {submission.status === "AWARDED" && submission.booking && (
             <Link href={`/bookings/${submission.booking.id}`} className="mt-2 inline-block text-sm underline">
@@ -204,10 +213,10 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
                       </Link>
                     )}
 
-                    {isOpen && isOwner && !entry.designer.isAiGenerated && (
+                    {canAward && isOwner && !entry.designer.isAiGenerated && (
                       <AwardForm submissionId={submission.id} entryId={entry.id} />
                     )}
-                    {isOpen && isOwner && entry.designer.isAiGenerated && (
+                    {canAward && isOwner && entry.designer.isAiGenerated && (
                       <span className="text-xs text-black/40">Concept only — not available for hire</span>
                     )}
                   </div>

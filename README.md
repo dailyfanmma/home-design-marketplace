@@ -45,6 +45,20 @@ that. Since there was previously no way to create a *new* account at all
 form — name, email, account type, no password, same MVP-auth spirit as
 `/login`.
 
+Every contest now has a real deadline (`Submission.closesAt`) and there's an
+in-app **notification center** (the 🔔 in the header). Contests inherited
+into an `Event` use that event's `closesAt`; standalone ones get 7 days.
+There's no real cron job, so `lib/lifecycle.ts`'s `syncLifecycle()` enforces
+deadlines lazily -- it runs at the top of the root layout (every page load)
+and inside every action that reads contest/event status, flipping
+`OPEN` → `CLOSED` (and `UPCOMING` → `ACTIVE` for events) the moment anyone
+next touches the app past the deadline. A `CLOSED` contest stops taking new
+entries and votes, but the homeowner can still award a winner from it --
+`AWARDED` is the only truly terminal state, since real judging usually
+happens after submissions close, not before. Entries, votes, contest
+closings, and referral bonuses all create a `Notification` for the relevant
+user, shown with an unread badge and on `/notifications`.
+
 This is an MVP scaffold: real auth, real payments, and real image generation
 are stubbed out so the core contest → vote → hire → review loop, and the
 credit economy around it, are fully functional and easy to demo.
@@ -88,6 +102,8 @@ the stand-in for real auth (see "Next steps" below).
 - `User.isAiGenerated` — flags a seeded AI-persona designer; see "AI-persona designers" above
 - `AiConcept` — a homeowner's own instant, private AI concept for their `Submission`; see above
 - `User.referredById` — self-relation to whoever referred this user; see "referral" above
+- `Submission.closesAt` — when a contest stops accepting entries/votes; enforced by `lib/lifecycle.ts`
+- `Notification` — an in-app alert for a user (new entry, new vote, contest closed, hired, referral bonus); see above
 
 ## What's stubbed, and what real building looks like next
 
@@ -108,9 +124,6 @@ the stand-in for real auth (see "Next steps" below).
   `lib/actions.ts`, which only depends on its `{ imageUrl, description }`
   return shape. This is also the AI-persona images' real fix (see below) —
   the same real API would serve both features.
-- **Contest lifecycle** has no deadline/auto-close — add a `closesAt` on
-  `Submission` and a cron/job to flip `OPEN` → `CLOSED` when it passes without
-  an award.
 - **Trust & safety**: no report/flag flow, no moderation queue for entries or
   reviews, no rate limiting on votes beyond the one-per-user constraint.
 - **Product links** are unvalidated free-text URLs; a real version would want
@@ -123,11 +136,25 @@ the stand-in for real auth (see "Next steps" below).
   version would likely add an unlimited-actions subscription alongside
   credits, which is a billing-provider decision (Stripe Billing) more than a
   schema change.
-- **Events don't auto-close or auto-crown a winner** — `Event.status` is set
-  by hand (see seed data). A real version needs a job that flips
-  `ACTIVE` → `CLOSED` at `closesAt` and decides what "winning" an event (as
+- **Events auto-transition on schedule now, but still don't auto-crown a
+  winner** — `syncLifecycle()` flips `UPCOMING` → `ACTIVE` → `CLOSED` on
+  time, but a real version still needs to decide what "winning" an event (as
   opposed to winning an individual room's contest) even means when it spans
   multiple homeowners' rooms.
+- **Lazy lifecycle sync, not a real scheduler** — `syncLifecycle()` only runs
+  when someone loads a page or triggers an action, so a contest with zero
+  traffic after its deadline will keep showing `OPEN` until the next visit
+  (harmless for correctness -- entries/votes/awards all re-check status
+  themselves -- but a "closes in 2 hours" notification could arrive late, or
+  never, if nobody visits). A real version wants an actual cron job.
+- **Notifications are in-app only** — no email or push, so "come back and
+  check" still depends on the user opening the app on their own. This is the
+  next thing to fix if retention doesn't improve: wire the same `notify()`
+  call sites in `lib/actions.ts`/`lib/lifecycle.ts` to also send an email
+  (Resend/SendGrid) or push notification, not just write a `Notification` row.
+- **No throttling on vote notifications** — a popular entry getting 50 votes
+  in an hour means the designer gets 50 separate notifications. Fine for a
+  demo; a real version would batch these ("12 new votes on your entry").
 - **AI-persona images are reused stock photos**, not real per-entry renders —
   seed data picks from a small pool of verified Unsplash URLs by room type.
   A real version would generate an actual image-to-image render of the
