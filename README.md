@@ -89,6 +89,21 @@ To make coming back worth it, there's now a full engagement layer:
   credits, half are unlocked free by earning their matching achievement --
   managed from `/profile`.
 
+Homeowners can also pay to commission a specific AI persona directly
+(`commissionPersona` in `lib/actions.ts`, `Commission` model) for
+`COMMISSION_COST` credits — pick one of the 16 personas by name/style, get 3
+concepts in *their* signature look with a shoppable product link each, all
+private to the buyer (not a contest entry, same as the free generator).
+Every persona's style lives in exactly one place, `lib/personas.ts` -- name,
+style label, signature look, and signature product -- and both their seeded
+contest entries and this paid commission draw from it, so a persona can't
+describe itself one way in a contest and another way when commissioned.
+Commission images/descriptions are also generated *deterministically*
+(`lib/roomImagePool.ts`'s `stablePick`, keyed on persona + room type + slot),
+not randomly, so commissioning the same persona for the same room twice
+returns the identical 3 concepts both times -- a persona reliably looks like
+themselves, which is the whole point of picking one by style.
+
 This is an MVP scaffold: real auth, real payments, and real image generation
 are stubbed out so the core contest → vote → hire → review loop, and the
 credit economy around it, are fully functional and easy to demo.
@@ -138,6 +153,9 @@ the stand-in for real auth (see "Next steps" below).
 - `User.loginStreak` / `lastLoginRewardAt` — daily login bonus state; see `lib/loginRewards.ts`
 - `UserAchievement` — which of `lib/achievements.ts`'s catalog a user has unlocked, and when
 - `UserFlair` / `User.equippedFlairKey` — which of `lib/flair.ts`'s catalog a user owns and has equipped
+- `User.personaKey` — which entry in `lib/personas.ts`'s catalog an AI-persona account is; see above
+- `Commission` / `Entry.commissionId` — a paid, private request for a persona's concepts; an `Entry` with
+  `commissionId` set is never shown in the public grid and can't be voted on or awarded
 
 ## What's stubbed, and what real building looks like next
 
@@ -221,3 +239,18 @@ the stand-in for real auth (see "Next steps" below).
   adding a new one means a code change + redeploy, not an admin action. Fine
   for ~8-10 of each; revisit if the catalog grows enough to want a CMS-style
   editor.
+- **Commissioned concepts reuse the same stock-photo pool as everything else**
+  -- style consistency is real (same persona always gets the same 3 images
+  and the same description for a given room, see above), but the *images*
+  themselves aren't unique to that persona, just deterministically picked
+  from the shared pool. A real image-to-image API is what actually gives
+  each persona a visually distinct look, not just a distinct write-up.
+- **Commission pricing is flat regardless of room type or persona** -- every
+  persona costs the same `COMMISSION_COST` for the same 3 concepts. A real
+  version might price "premium" personas higher, closer to how real
+  designers would command different rates.
+- **A persona already commissioned for a room drops out of that room's
+  picker** so you can't accidentally pay twice for the identical 3 concepts.
+  There's no server-side block against it though (only the UI hides the
+  option) -- fine for an MVP, but a determined user hitting the action
+  directly could still re-pay for the same result.

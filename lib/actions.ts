@@ -16,11 +16,13 @@ import {
   REFERRAL_PURCHASE_BONUS_PCT,
 } from "@/lib/credits";
 import { generateConcept, CONCEPT_STYLES, type ConceptStyle } from "@/lib/aiConceptGenerator";
+import { generateCommissionConcepts, COMMISSION_COST } from "@/lib/personaCommission";
 import { syncLifecycle } from "@/lib/lifecycle";
 import { notify, markAllNotificationsRead } from "@/lib/notifications";
 import { unlockAchievement } from "@/lib/achievements";
 import { FLAIRS, isPurchasable, type FlairKey } from "@/lib/flair";
 import { SUBMISSION_DEFAULT_DURATION_MS } from "@/lib/contestDuration";
+import type { PersonaKey } from "@/lib/personas";
 import type { RoomType } from "@prisma/client";
 
 export async function loginAs(userId: string) {
@@ -181,6 +183,46 @@ export async function generateAiConcept(submissionId: string, formData: FormData
   revalidatePath(`/contests/${submissionId}`);
 }
 
+export async function commissionPersona(submissionId: string, formData: FormData) {
+  await syncLifecycle();
+
+  const user = await getCurrentUser();
+  const submission = await prisma.submission.findUnique({ where: { id: submissionId } });
+  if (!user || !submission || submission.homeownerId !== user.id) {
+    throw new Error("Only the homeowner who started this contest can commission a concept for it.");
+  }
+  if (submission.status !== "OPEN") throw new Error("This contest is no longer open.");
+
+  const personaId = String(formData.get("personaId") ?? "");
+  const persona = await prisma.user.findUnique({ where: { id: personaId } });
+  if (!persona || !persona.isAiGenerated || !persona.personaKey) {
+    throw new Error("Pick a valid AI persona to commission.");
+  }
+
+  const concepts = generateCommissionConcepts(persona.personaKey as PersonaKey, submission.roomType);
+
+  await prisma.$transaction(async (tx) => {
+    await spendCredits(tx, user.id, COMMISSION_COST, "COMMISSION_SPEND", `Commissioned ${persona.name} for "${submission.title}"`);
+    const commission = await tx.commission.create({
+      data: { submissionId, personaId: persona.id, buyerId: user.id, cost: COMMISSION_COST },
+    });
+    for (const concept of concepts) {
+      await tx.entry.create({
+        data: {
+          submissionId,
+          designerId: persona.id,
+          commissionId: commission.id,
+          imageUrl: concept.imageUrl,
+          description: concept.description,
+          productLinks: { create: [{ label: concept.productLink.label, price: concept.productLink.price, url: "https://example.com/product" }] },
+        },
+      });
+    }
+  });
+
+  revalidatePath(`/contests/${submissionId}`);
+}
+
 export async function castVote(entryId: string, submissionId: string) {
   await syncLifecycle();
 
@@ -196,6 +238,7 @@ export async function castVote(entryId: string, submissionId: string) {
   if (existing) return; // already voted -- no-op, don't charge twice
 
   const entry = await prisma.entry.findUniqueOrThrow({ where: { id: entryId }, include: { designer: true } });
+  if (entry.commissionId) throw new Error("This is a private commissioned concept, not a contest entry -- it can't be voted on.");
 
   await prisma.$transaction(async (tx) => {
     await spendCredits(tx, user.id, VOTE_COST, "VOTE_SPEND", "Vote cast");

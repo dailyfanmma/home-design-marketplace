@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { SUBMISSION_DEFAULT_DURATION_MS } from "../lib/contestDuration";
 import { ensureSystemContests } from "../lib/contestGenerator";
+import { AI_PERSONAS, personaEmail, personaBio, type PersonaKey } from "../lib/personas";
 
 const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL ?? "file:./dev.db" });
 const prisma = new PrismaClient({ adapter });
@@ -226,32 +227,17 @@ async function main() {
   // components/AiBadge.tsx). None are eligible to be hired: awardWinner in
   // lib/actions.ts rejects it server-side regardless of what the UI shows.
   // Not every persona has an entry yet -- e.g. Iris is saved for Rainbow
-  // Room Week once that event goes ACTIVE.
-  const aiPersonaDefs = [
-    { key: "nova", name: "Nova Ashford", bio: "AI design persona. Scandinavian-Japanese minimalism -- light wood, negative space, nothing left on the counters." },
-    { key: "gia", name: "GreenHouse Gia", bio: "AI design persona. Biophilic specialist -- if it can hold a plant, it has a plant." },
-    { key: "onyx", name: "Max Onyx", bio: "AI design persona. Maximalist -- clashing patterns, saturated color, more is more." },
-    { key: "iris", name: "Iris Prism", bio: "AI design persona. Color-drenching specialist, saving up entries for Rainbow Room Week." },
-    { key: "otto", name: "Otto Bauhaus", bio: "AI design persona. Mid-century modern -- walnut, brass, clean geometry." },
-    { key: "sable", name: "Sable Knox", bio: "AI design persona. Industrial loft -- exposed brick, black steel, Edison bulbs." },
-    { key: "coral", name: "Coral Wren", bio: "AI design persona. Coastal and nautical -- whitewash, rope, a little brass." },
-    { key: "aiko", name: "Aiko Tanaka-Bot", bio: "AI design persona. Japandi -- Japanese restraint meets Scandinavian warmth." },
-    { key: "flo", name: "Farmhand Flo", bio: "AI design persona. Modern farmhouse -- shiplap, apron sinks, black hardware." },
-    { key: "delphine", name: "Deco Delphine", bio: "AI design persona. Art Deco glam -- brass, velvet, geometric tile." },
-    { key: "remy", name: "Rustic Remy", bio: "AI design persona. Cottagecore -- floral, vintage finds, a little worn-in." },
-    { key: "noir", name: "Velvet Noir", bio: "AI design persona. Moody maximalism -- deep greens, black trim, warm brass." },
-    { key: "ada", name: "Lumen Ada", bio: "AI design persona. Bright Scandinavian -- white oak, linen, as much daylight as possible." },
-    { key: "theo", name: "Terra Cotta Theo", bio: "AI design persona. Mediterranean warmth -- terracotta, arches, olive green." },
-    { key: "sage", name: "Chroma Sage", bio: "AI design persona. Color and greenery in equal measure." },
-    { key: "bex", name: "Blueprint Bex", bio: "AI design persona. Transitional -- classic bones, current finishes." },
-  ] as const;
-
+  // Room Week once that event goes ACTIVE. Style/bio come from
+  // lib/personas.ts -- the same catalog lib/personaCommission.ts uses for
+  // paid commissions, so a persona can't drift between the two.
+  const personaKeys = Object.keys(AI_PERSONAS) as PersonaKey[];
   const ai: Record<string, Awaited<ReturnType<typeof prisma.user.upsert>>> = {};
-  for (const p of aiPersonaDefs) {
-    ai[p.key] = await prisma.user.upsert({
-      where: { email: `${p.key}.ai@renoshowdown.dev` },
+  for (const key of personaKeys) {
+    const p = AI_PERSONAS[key];
+    ai[key] = await prisma.user.upsert({
+      where: { email: personaEmail(key) },
       update: {},
-      create: { name: p.name, email: `${p.key}.ai@renoshowdown.dev`, role: "DESIGNER", bio: p.bio, isAiGenerated: true },
+      create: { name: p.name, email: personaEmail(key), role: "DESIGNER", bio: personaBio(key), isAiGenerated: true, personaKey: key },
     });
   }
 
@@ -435,7 +421,7 @@ async function main() {
   console.log("Seeded:", {
     homeowners: [amy.email, raj.email],
     humanDesigners: [dana.email, luca.email, mo.email],
-    aiPersonas: aiPersonaDefs.length,
+    aiPersonas: personaKeys.length,
   });
 }
 

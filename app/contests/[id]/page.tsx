@@ -3,9 +3,11 @@ import Image from "next/image";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { castVote, awardWinner, generateAiConcept } from "@/lib/actions";
+import { castVote, awardWinner, generateAiConcept, commissionPersona } from "@/lib/actions";
 import { VOTE_COST, GENERATE_CONCEPT_COST } from "@/lib/credits";
 import { CONCEPT_STYLES } from "@/lib/aiConceptGenerator";
+import { COMMISSION_COST } from "@/lib/personaCommission";
+import { AI_PERSONAS, type PersonaKey } from "@/lib/personas";
 import { AiBadge } from "@/components/AiBadge";
 import { FLAIRS, type FlairKey } from "@/lib/flair";
 
@@ -20,10 +22,15 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
       booking: true,
       event: true,
       entries: {
+        where: { commissionId: null }, // private commissioned concepts never show in the public grid
         include: { designer: true, productLinks: true, votes: true },
         orderBy: { createdAt: "asc" },
       },
       aiConcepts: { orderBy: { createdAt: "desc" } },
+      commissions: {
+        include: { persona: true, entries: { include: { productLinks: true } } },
+        orderBy: { createdAt: "desc" },
+      },
     },
   });
 
@@ -35,6 +42,17 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
   const canAward = submission.status !== "AWARDED"; // judging can happen after entries close
   const canAffordVote = (user?.credits ?? 0) >= VOTE_COST;
   const canAffordGenerate = (user?.credits ?? 0) >= GENERATE_CONCEPT_COST;
+  const canAffordCommission = (user?.credits ?? 0) >= COMMISSION_COST;
+  const alreadyCommissionedIds = new Set(submission.commissions.map((c) => c.personaId));
+  const personaOptions = isOwner
+    ? (
+        await prisma.user.findMany({
+          where: { isAiGenerated: true, personaKey: { not: null } },
+          select: { id: true, name: true, personaKey: true },
+          orderBy: { name: "asc" },
+        })
+      ).filter((p) => !alreadyCommissionedIds.has(p.id))
+    : [];
 
   return (
     <div className="space-y-8">
@@ -155,6 +173,85 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {isOwner && (
+        <div className="card space-y-3 p-4">
+          <div>
+            <h2 className="text-lg font-semibold">Commission an AI designer</h2>
+            <p className="text-sm text-black/60">
+              Pick one of our AI personas and pay for {COMMISSION_COST} credits to get{" "}
+              {submission.commissions[0]?.entries.length ?? 3} concepts in their signature style, each with a
+              shoppable product link. Private to you, not a contest entry, and each persona always designs the
+              same way.
+            </p>
+          </div>
+
+          {isOpen && personaOptions.length === 0 && (
+            <p className="text-xs text-black/40">
+              You&rsquo;ve commissioned every persona for this room already -- since each one is
+              deterministic, commissioning the same one again would just return the same 3 concepts.
+            </p>
+          )}
+
+          {isOpen && personaOptions.length > 0 && (
+            <form action={commissionPersona.bind(null, submission.id)} className="flex flex-wrap items-center gap-2">
+              <select name="personaId" className="rounded-md border border-black/20 bg-white px-2 py-1.5 text-sm" required>
+                <option value="">Choose a persona...</option>
+                {personaOptions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} — {AI_PERSONAS[p.personaKey as PersonaKey]?.style}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                disabled={!canAffordCommission}
+                title={!canAffordCommission ? "Not enough credits" : undefined}
+                className={`rounded-md px-3 py-1.5 text-sm text-white ${
+                  canAffordCommission ? "bg-[var(--accent)]" : "bg-black/20"
+                }`}
+              >
+                Commission ({COMMISSION_COST} credits)
+              </button>
+              {!canAffordCommission && (
+                <Link href="/credits" className="text-xs underline text-black/50">
+                  Buy credits
+                </Link>
+              )}
+            </form>
+          )}
+
+          {submission.commissions.map((commission) => (
+            <div key={commission.id} className="space-y-2">
+              <div className="flex items-center gap-1.5 text-sm font-medium text-black/70">
+                <AiBadge />
+                <Link href={`/designers/${commission.personaId}`} className="underline">
+                  {commission.persona.name}
+                </Link>
+                <span className="text-black/40">— {AI_PERSONAS[commission.persona.personaKey as PersonaKey]?.style}</span>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                {commission.entries.map((entry) => (
+                  <div key={entry.id} className="overflow-hidden rounded-lg border border-black/10">
+                    <div className="relative h-32 w-full bg-black/5">
+                      <Image src={entry.imageUrl} alt={entry.description} fill className="object-cover" unoptimized />
+                    </div>
+                    <div className="space-y-1 p-2 text-xs">
+                      <p className="text-black/60">{entry.description}</p>
+                      {entry.productLinks.map((link) => (
+                        <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="block underline">
+                          {link.label}
+                          {link.price != null && ` — $${link.price}`}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
