@@ -2,14 +2,18 @@ import { prisma } from "@/lib/prisma";
 import { loginAs } from "@/lib/actions";
 
 export default async function LoginPage() {
-  const users = await prisma.user.findMany({ orderBy: [{ role: "asc" }, { name: "asc" }] });
+  const users = await prisma.user.findMany({
+    where: { isAiGenerated: false },
+    orderBy: [{ role: "asc" }, { name: "asc" }],
+  });
 
   return (
     <div className="max-w-md space-y-4">
       <h1 className="text-2xl font-bold">Log in</h1>
       <p className="text-sm text-black/60">
         MVP stand-in for real auth: pick a seeded account to try each role. Run{" "}
-        <code>npm run db:seed</code> if this list is empty.
+        <code>npm run db:seed</code> if this list is empty. (AI-persona designers also submit
+        entries but aren&rsquo;t listed here — nobody logs in as one.)
       </p>
       <ul className="space-y-2">
         {users.map((u) => (

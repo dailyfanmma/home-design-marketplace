@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { castVote, awardWinner } from "@/lib/actions";
 import { VOTE_COST } from "@/lib/credits";
+import { AiBadge } from "@/components/AiBadge";
 
 export default async function ContestPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -86,10 +87,13 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
                   <Image src={entry.imageUrl} alt={entry.description} fill className="object-cover" unoptimized />
                 </div>
                 <div className="space-y-2 p-4">
-                  <div className="flex items-center justify-between">
-                    <Link href={`/designers/${entry.designerId}`} className="font-medium underline">
-                      {entry.designer.name}
-                    </Link>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Link href={`/designers/${entry.designerId}`} className="font-medium underline">
+                        {entry.designer.name}
+                      </Link>
+                      {entry.designer.isAiGenerated && <AiBadge />}
+                    </div>
                     <span className="text-sm font-semibold text-[var(--accent)]">
                       {entry.votes.length} {entry.votes.length === 1 ? "vote" : "votes"}
                     </span>
@@ -135,8 +139,11 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
                       </Link>
                     )}
 
-                    {isOpen && isOwner && (
+                    {isOpen && isOwner && !entry.designer.isAiGenerated && (
                       <AwardForm submissionId={submission.id} entryId={entry.id} />
+                    )}
+                    {isOpen && isOwner && entry.designer.isAiGenerated && (
+                      <span className="text-xs text-black/40">Concept only — not available for hire</span>
                     )}
                   </div>
                 </div>

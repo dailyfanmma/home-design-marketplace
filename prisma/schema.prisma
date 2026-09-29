@@ -61,6 +61,10 @@ model User {
   bio       String?
   avatarUrl String?
   credits   Int      @default(10)
+  /// True for seeded AI-persona designers used to bootstrap contest supply.
+  /// Always disclosed in the UI, and never eligible to be hired -- see
+  /// awardWinner in lib/actions.ts.
+  isAiGenerated Boolean @default(false)
   createdAt DateTime @default(now())
 
   submissions Submission[] @relation("HomeownerSubmissions")

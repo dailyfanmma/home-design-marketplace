@@ -17,6 +17,17 @@ some events cost credits, and users can buy more. Designers also keep a
 public **showcase** of real past work on their profile, separate from the
 contest entries they've submitted.
 
+To keep contests from looking empty while the real designer community grows,
+the seed data includes 16 clearly-disclosed **AI-persona designers**
+(`User.isAiGenerated`) that submit concepts like any other designer. They're
+labeled everywhere they appear (a purple "AI persona" badge on every entry
+and profile, plus a full disclosure banner on their profile page), excluded
+from the login picker, and blocked server-side from ever being hired —
+`awardWinner` in `lib/actions.ts` rejects it regardless of what the UI shows.
+Real votes still come only from real users: the seed data does not have AI
+accounts vote, since that would cross from "seeded supply" into inflating a
+public leaderboard.
+
 This is an MVP scaffold: real auth, real payments, and real image generation
 are stubbed out so the core contest → vote → hire → review loop, and the
 credit economy around it, are fully functional and easy to demo.
@@ -57,6 +68,7 @@ the stand-in for real auth (see "Next steps" below).
 - `Review` — left by the homeowner once a `Booking` is `COMPLETED`; costs `REVIEW_COST` credits
 - `CreditTransaction` — an audit log row for every credit grant or spend (see `lib/credits.ts`)
 - `ShowcaseItem` — a designer's real past project, shown on their profile alongside contest entries
+- `User.isAiGenerated` — flags a seeded AI-persona designer; see "AI-persona designers" above
 
 ## What's stubbed, and what real building looks like next
 
@@ -92,3 +104,14 @@ the stand-in for real auth (see "Next steps" below).
   `ACTIVE` → `CLOSED` at `closesAt` and decides what "winning" an event (as
   opposed to winning an individual room's contest) even means when it spans
   multiple homeowners' rooms.
+- **AI-persona images are reused stock photos**, not real per-entry renders —
+  seed data picks from a small pool of verified Unsplash URLs by room type.
+  A real version would generate an actual image-to-image render of the
+  homeowner's own photo per persona/style (this is also the more interesting
+  product direction: real AI-rendered concepts of *your* room, not stock
+  photos standing in for them).
+- **AI personas can't be hired at all right now** — `awardWinner` rejects it
+  outright. If you want AI concepts to ever convert to a real paid outcome,
+  that needs a real fulfillment path behind it first (e.g. a vetted human
+  designer/contractor actually executes the AI concept) — flipping the
+  guard without that would mean charging someone for work nobody delivers.

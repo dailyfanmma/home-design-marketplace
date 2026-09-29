@@ -103,7 +103,7 @@ async function main() {
     ],
   });
 
-  await prisma.submission.create({
+  const bathroomSubmission = await prisma.submission.create({
     data: {
       homeownerId: raj.id,
       title: "Builder-grade bathroom, want spa vibes",
@@ -220,7 +220,168 @@ async function main() {
     ],
   });
 
-  console.log("Seeded:", { homeowners: [amy.email, raj.email], designers: [dana.email, luca.email, mo.email] });
+  // --- AI-persona designers -----------------------------------------------
+  // Seeded supply to keep contests active while the real designer community
+  // grows. Every persona discloses itself via bio text AND the isAiGenerated
+  // flag (rendered as a badge + banner everywhere it appears -- see
+  // components/AiBadge.tsx). None are eligible to be hired: awardWinner in
+  // lib/actions.ts rejects it server-side regardless of what the UI shows.
+  // Not every persona has an entry yet -- e.g. Iris is saved for Rainbow
+  // Room Week once that event goes ACTIVE.
+  const aiPersonaDefs = [
+    { key: "nova", name: "Nova Ashford", bio: "AI design persona. Scandinavian-Japanese minimalism -- light wood, negative space, nothing left on the counters." },
+    { key: "gia", name: "GreenHouse Gia", bio: "AI design persona. Biophilic specialist -- if it can hold a plant, it has a plant." },
+    { key: "onyx", name: "Max Onyx", bio: "AI design persona. Maximalist -- clashing patterns, saturated color, more is more." },
+    { key: "iris", name: "Iris Prism", bio: "AI design persona. Color-drenching specialist, saving up entries for Rainbow Room Week." },
+    { key: "otto", name: "Otto Bauhaus", bio: "AI design persona. Mid-century modern -- walnut, brass, clean geometry." },
+    { key: "sable", name: "Sable Knox", bio: "AI design persona. Industrial loft -- exposed brick, black steel, Edison bulbs." },
+    { key: "coral", name: "Coral Wren", bio: "AI design persona. Coastal and nautical -- whitewash, rope, a little brass." },
+    { key: "aiko", name: "Aiko Tanaka-Bot", bio: "AI design persona. Japandi -- Japanese restraint meets Scandinavian warmth." },
+    { key: "flo", name: "Farmhand Flo", bio: "AI design persona. Modern farmhouse -- shiplap, apron sinks, black hardware." },
+    { key: "delphine", name: "Deco Delphine", bio: "AI design persona. Art Deco glam -- brass, velvet, geometric tile." },
+    { key: "remy", name: "Rustic Remy", bio: "AI design persona. Cottagecore -- floral, vintage finds, a little worn-in." },
+    { key: "noir", name: "Velvet Noir", bio: "AI design persona. Moody maximalism -- deep greens, black trim, warm brass." },
+    { key: "ada", name: "Lumen Ada", bio: "AI design persona. Bright Scandinavian -- white oak, linen, as much daylight as possible." },
+    { key: "theo", name: "Terra Cotta Theo", bio: "AI design persona. Mediterranean warmth -- terracotta, arches, olive green." },
+    { key: "sage", name: "Chroma Sage", bio: "AI design persona. Color and greenery in equal measure." },
+    { key: "bex", name: "Blueprint Bex", bio: "AI design persona. Transitional -- classic bones, current finishes." },
+  ] as const;
+
+  const ai: Record<string, Awaited<ReturnType<typeof prisma.user.upsert>>> = {};
+  for (const p of aiPersonaDefs) {
+    ai[p.key] = await prisma.user.upsert({
+      where: { email: `${p.key}.ai@renoshowdown.dev` },
+      update: {},
+      create: { name: p.name, email: `${p.key}.ai@renoshowdown.dev`, role: "DESIGNER", bio: p.bio, isAiGenerated: true },
+    });
+  }
+
+  // Kitchen (Daily Contest): 5 AI entries alongside Dana's and Luca's, so
+  // today's daily contest actually looks like a daily contest.
+  await prisma.entry.createMany({
+    data: [
+      {
+        submissionId: submission.id,
+        designerId: ai.otto.id,
+        imageUrl: "https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?w=1200",
+        description: "Walnut-stained lowers, brass hardware, honed soapstone counters to keep the mid-century warmth.",
+      },
+      {
+        submissionId: submission.id,
+        designerId: ai.sable.id,
+        imageUrl: "https://images.unsplash.com/photo-1567016432779-094069958ea5?w=1200",
+        description: "Matte black cabinetry, exposed shelving, a single hanging filament bulb over the sink.",
+      },
+      {
+        submissionId: submission.id,
+        designerId: ai.flo.id,
+        imageUrl: "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=1200",
+        description: "Shiplap accent wall, a farmhouse apron sink, and warm brass cup pulls throughout.",
+      },
+      {
+        submissionId: submission.id,
+        designerId: ai.delphine.id,
+        imageUrl: "https://images.unsplash.com/photo-1524758631624-e2822e304c36?w=1200",
+        description: "Black-and-white geometric floor tile, brass trim, a bold Deco light fixture over the island.",
+      },
+      {
+        submissionId: submission.id,
+        designerId: ai.ada.id,
+        imageUrl: "https://images.unsplash.com/photo-1543353071-873f17a7a088?w=1200",
+        description: "White oak lowers, all-white uppers, linen roman shade to soften the one small window.",
+      },
+    ],
+  });
+
+  // Bathroom (standalone, no human entries yet): 4 AI entries so it isn't empty.
+  await prisma.entry.createMany({
+    data: [
+      {
+        submissionId: bathroomSubmission.id,
+        designerId: ai.coral.id,
+        imageUrl: "https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?w=1200",
+        description: "Whitewashed vanity, woven rattan mirror, a thin brass towel rail for a coastal-calm feel.",
+      },
+      {
+        submissionId: bathroomSubmission.id,
+        designerId: ai.aiko.id,
+        imageUrl: "https://images.unsplash.com/photo-1616594039964-ae9021a400a0?w=1200",
+        description: "Natural stone tile, a low wooden stool, and a single potted fern -- restraint over statement pieces.",
+      },
+      {
+        submissionId: bathroomSubmission.id,
+        designerId: ai.noir.id,
+        imageUrl: "https://images.unsplash.com/photo-1598928506311-c55ded91a20c?w=1200",
+        description: "Deep forest-green vanity, black fixtures, warm brass sconces either side of the mirror.",
+      },
+      {
+        submissionId: bathroomSubmission.id,
+        designerId: ai.remy.id,
+        imageUrl: "https://images.unsplash.com/photo-1533090161767-e6ffed986c88?w=1200",
+        description: "A vintage-style clawfoot tub, floral wallpaper, and mismatched brass fixtures for a lived-in feel.",
+      },
+    ],
+  });
+
+  // Greenery Challenge: 3 AI entries alongside Mo's.
+  await prisma.entry.createMany({
+    data: [
+      {
+        submissionId: greenerySubmission.id,
+        designerId: ai.gia.id,
+        imageUrl: "https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=1200",
+        description: "A full plant wall on a simple grid trellis, paired with plain linen furniture so the greenery leads.",
+      },
+      {
+        submissionId: greenerySubmission.id,
+        designerId: ai.sage.id,
+        imageUrl: "https://images.unsplash.com/photo-1554995207-c18c203602cb?w=1200",
+        description: "Terracotta planters against a warm ochre accent wall -- color and greenery sharing the room.",
+      },
+      {
+        submissionId: greenerySubmission.id,
+        designerId: ai.bex.id,
+        imageUrl: "https://images.unsplash.com/photo-1449247709967-d4461a6a6103?w=1200",
+        description: "Classic slipcovered sofa, brass floor lamp, and a large potted olive tree to keep it current.",
+      },
+    ],
+  });
+
+  const [ottoEntry, floEntry, coralEntry, giaEntry] = await Promise.all([
+    prisma.entry.findFirstOrThrow({ where: { submissionId: submission.id, designerId: ai.otto.id } }),
+    prisma.entry.findFirstOrThrow({ where: { submissionId: submission.id, designerId: ai.flo.id } }),
+    prisma.entry.findFirstOrThrow({ where: { submissionId: bathroomSubmission.id, designerId: ai.coral.id } }),
+    prisma.entry.findFirstOrThrow({ where: { submissionId: greenerySubmission.id, designerId: ai.gia.id } }),
+  ]);
+
+  // A handful of real votes on AI entries -- from the two real homeowners,
+  // never from AI accounts themselves. Seeding AI *submissions* is a
+  // legitimate cold-start move; seeding AI *votes* to inflate a public
+  // leaderboard would not be, so that's deliberately not done here.
+  await prisma.vote.createMany({
+    data: [
+      { entryId: ottoEntry.id, voterId: raj.id },
+      { entryId: coralEntry.id, voterId: raj.id },
+      { entryId: floEntry.id, voterId: amy.id },
+      { entryId: giaEntry.id, voterId: amy.id },
+    ],
+  });
+  await prisma.user.update({ where: { id: raj.id }, data: { credits: { decrement: 2 } } });
+  await prisma.user.update({ where: { id: amy.id }, data: { credits: { decrement: 2 } } });
+  await prisma.creditTransaction.createMany({
+    data: [
+      { userId: raj.id, amount: -1, type: "VOTE_SPEND", note: "Vote cast" },
+      { userId: raj.id, amount: -1, type: "VOTE_SPEND", note: "Vote cast" },
+      { userId: amy.id, amount: -1, type: "VOTE_SPEND", note: "Vote cast" },
+      { userId: amy.id, amount: -1, type: "VOTE_SPEND", note: "Vote cast" },
+    ],
+  });
+
+  console.log("Seeded:", {
+    homeowners: [amy.email, raj.email],
+    humanDesigners: [dana.email, luca.email, mo.email],
+    aiPersonas: aiPersonaDefs.length,
+  });
 }
 
 main()

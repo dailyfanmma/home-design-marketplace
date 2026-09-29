@@ -118,8 +118,11 @@ export async function awardWinner(submissionId: string, entryId: string, formDat
   }
   if (submission.status !== "OPEN") throw new Error("This contest was already decided.");
 
-  const entry = await prisma.entry.findUnique({ where: { id: entryId } });
+  const entry = await prisma.entry.findUnique({ where: { id: entryId }, include: { designer: true } });
   if (!entry || entry.submissionId !== submissionId) throw new Error("That entry doesn't belong to this contest.");
+  if (entry.designer.isAiGenerated) {
+    throw new Error("This is an AI-generated concept, not a real designer -- it can't be hired.");
+  }
 
   const designFee = Math.round(Number(formData.get("designFee") ?? 0));
   if (!designFee || designFee <= 0) throw new Error("Enter a design fee greater than zero.");

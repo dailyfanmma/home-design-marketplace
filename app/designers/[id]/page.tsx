@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { addShowcaseItem } from "@/lib/actions";
+import { AiBadge } from "@/components/AiBadge";
 
 export default async function DesignerProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -34,7 +35,17 @@ export default async function DesignerProfilePage({ params }: { params: Promise<
   return (
     <div className="space-y-8">
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold">{designer.name}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold">{designer.name}</h1>
+          {designer.isAiGenerated && <AiBadge />}
+        </div>
+        {designer.isAiGenerated && (
+          <p className="max-w-xl rounded-md bg-purple-50 p-3 text-sm text-purple-900">
+            This is an AI-generated design persona, created by Reno Showdown to keep contests active
+            while the community grows. Its concepts are AI-rendered, not real client work, and it
+            can&rsquo;t be hired for a paid project.
+          </p>
+        )}
         {designer.bio && <p className="max-w-xl text-black/70">{designer.bio}</p>}
         <div className="flex gap-4 pt-1 text-sm text-black/60">
           <span>{wins} hired</span>
