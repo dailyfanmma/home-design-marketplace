@@ -6,6 +6,7 @@ import type { Prisma, CreditTxType } from "@prisma/client";
 // until a real premium subscription replaces it.
 export const VOTE_COST = 1;
 export const REVIEW_COST = 1;
+export const GENERATE_CONCEPT_COST = 2;
 
 export const CREDIT_PACKS = [
   { credits: 20, priceUsd: 5 },

@@ -3,8 +3,9 @@ import Image from "next/image";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { castVote, awardWinner } from "@/lib/actions";
-import { VOTE_COST } from "@/lib/credits";
+import { castVote, awardWinner, generateAiConcept } from "@/lib/actions";
+import { VOTE_COST, GENERATE_CONCEPT_COST } from "@/lib/credits";
+import { CONCEPT_STYLES } from "@/lib/aiConceptGenerator";
 import { AiBadge } from "@/components/AiBadge";
 
 export default async function ContestPage({ params }: { params: Promise<{ id: string }> }) {
@@ -21,6 +22,7 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
         include: { designer: true, productLinks: true, votes: true },
         orderBy: { createdAt: "asc" },
       },
+      aiConcepts: { orderBy: { createdAt: "desc" } },
     },
   });
 
@@ -30,6 +32,7 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
   const isOwner = user?.id === submission.homeownerId;
   const isOpen = submission.status === "OPEN";
   const canAffordVote = (user?.credits ?? 0) >= VOTE_COST;
+  const canAffordGenerate = (user?.credits ?? 0) >= GENERATE_CONCEPT_COST;
 
   return (
     <div className="space-y-8">
@@ -70,6 +73,68 @@ export default async function ContestPage({ params }: { params: Promise<{ id: st
           )}
         </div>
       </div>
+
+      {isOwner && (
+        <div className="card space-y-3 p-4">
+          <div>
+            <h2 className="text-lg font-semibold">Your AI concepts</h2>
+            <p className="text-sm text-black/60">
+              An instant, rough AI take on your room — private to you, not a contest entry, and not a
+              substitute for a real designer&rsquo;s response.
+            </p>
+          </div>
+
+          {isOpen && (
+            <form action={generateAiConcept.bind(null, submission.id)} className="flex flex-wrap items-center gap-2">
+              <select
+                name="style"
+                className="rounded-md border border-black/20 bg-white px-2 py-1.5 text-sm"
+                defaultValue={CONCEPT_STYLES[0]}
+              >
+                {CONCEPT_STYLES.map((style) => (
+                  <option key={style} value={style}>
+                    {style}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                disabled={!canAffordGenerate}
+                title={!canAffordGenerate ? "Not enough credits" : undefined}
+                className={`rounded-md px-3 py-1.5 text-sm text-white ${
+                  canAffordGenerate ? "bg-[var(--accent)]" : "bg-black/20"
+                }`}
+              >
+                Generate ({GENERATE_CONCEPT_COST} credits)
+              </button>
+              {!canAffordGenerate && (
+                <Link href="/credits" className="text-xs underline text-black/50">
+                  Buy credits
+                </Link>
+              )}
+            </form>
+          )}
+
+          {submission.aiConcepts.length > 0 && (
+            <div className="grid gap-4 sm:grid-cols-3">
+              {submission.aiConcepts.map((concept) => (
+                <div key={concept.id} className="overflow-hidden rounded-lg border border-black/10">
+                  <div className="relative h-32 w-full bg-black/5">
+                    <Image src={concept.imageUrl} alt={concept.description} fill className="object-cover" unoptimized />
+                  </div>
+                  <div className="space-y-1 p-2 text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <AiBadge />
+                      <span className="font-medium text-black/70">{concept.style}</span>
+                    </div>
+                    <p className="text-black/60">{concept.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="space-y-4">
         <h2 className="text-lg font-semibold">

@@ -28,6 +28,15 @@ Real votes still come only from real users: the seed data does not have AI
 accounts vote, since that would cross from "seeded supply" into inflating a
 public leaderboard.
 
+Homeowners can also generate an instant AI concept for their own room
+(`generateAiConcept` in `lib/actions.ts`, `AiConcept` model) for
+`GENERATE_CONCEPT_COST` credits — a rough, self-serve starting point, not a
+competing contest entry. It's private to the submission's owner, never shown
+in the public entries grid, and always disclosed with the same AI badge.
+Deliberately kept rougher than a real designer's entry (see
+`lib/aiConceptGenerator.ts`) so it's a teaser, not a replacement for the
+marketplace's actual value.
+
 This is an MVP scaffold: real auth, real payments, and real image generation
 are stubbed out so the core contest → vote → hire → review loop, and the
 credit economy around it, are fully functional and easy to demo.
@@ -69,6 +78,7 @@ the stand-in for real auth (see "Next steps" below).
 - `CreditTransaction` — an audit log row for every credit grant or spend (see `lib/credits.ts`)
 - `ShowcaseItem` — a designer's real past project, shown on their profile alongside contest entries
 - `User.isAiGenerated` — flags a seeded AI-persona designer; see "AI-persona designers" above
+- `AiConcept` — a homeowner's own instant, private AI concept for their `Submission`; see above
 
 ## What's stubbed, and what real building looks like next
 
@@ -80,10 +90,15 @@ the stand-in for real auth (see "Next steps" below).
   designers as connected accounts, charge the homeowner a
   `designFee + platformFee` payment intent, and payout the designer's cut
   automatically on completion.
-- **Concept images** are pasted URLs. A real product would let designers
-  upload directly (S3/Cloudinary) and could offer an in-app AI render step
-  (e.g. an image-to-image API against the homeowner's photo) so designers
-  don't need their own tools.
+- **Concept images** (designer entries) are pasted URLs. A real product would
+  let designers upload directly (S3/Cloudinary).
+- **`generateAiConcept` is fully stubbed** — `lib/aiConceptGenerator.ts`
+  picks a stock photo from a small verified pool by room type instead of
+  calling a real image model. Swap its body for a real image-to-image API
+  call (ideally against the homeowner's own `photoUrl`) without touching
+  `lib/actions.ts`, which only depends on its `{ imageUrl, description }`
+  return shape. This is also the AI-persona images' real fix (see below) —
+  the same real API would serve both features.
 - **Contest lifecycle** has no deadline/auto-close — add a `closesAt` on
   `Submission` and a cron/job to flip `OPEN` → `CLOSED` when it passes without
   an award.

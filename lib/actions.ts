@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, setCurrentUser, clearCurrentUser } from "@/lib/auth";
 import { splitBookingFee } from "@/lib/fees";
-import { spendCredits, VOTE_COST, REVIEW_COST, CREDIT_PACKS } from "@/lib/credits";
+import { spendCredits, VOTE_COST, REVIEW_COST, GENERATE_CONCEPT_COST, CREDIT_PACKS } from "@/lib/credits";
+import { generateConcept, CONCEPT_STYLES, type ConceptStyle } from "@/lib/aiConceptGenerator";
 import type { RoomType } from "@prisma/client";
 
 export async function loginAs(userId: string) {
@@ -91,6 +92,27 @@ export async function createEntry(submissionId: string, formData: FormData) {
 
   revalidatePath(`/contests/${submissionId}`);
   redirect(`/contests/${submissionId}?entry=${entry.id}`);
+}
+
+export async function generateAiConcept(submissionId: string, formData: FormData) {
+  const user = await getCurrentUser();
+  const submission = await prisma.submission.findUnique({ where: { id: submissionId } });
+  if (!user || !submission || submission.homeownerId !== user.id) {
+    throw new Error("Only the homeowner who started this contest can generate a concept for it.");
+  }
+  if (submission.status !== "OPEN") throw new Error("This contest is no longer open.");
+
+  const style = String(formData.get("style") ?? "") as ConceptStyle;
+  if (!CONCEPT_STYLES.includes(style)) throw new Error("Pick a valid style.");
+
+  const { imageUrl, description } = generateConcept(submission.roomType, style);
+
+  await prisma.$transaction(async (tx) => {
+    await spendCredits(tx, user.id, GENERATE_CONCEPT_COST, "GENERATE_CONCEPT_SPEND", `Generated a "${style}" concept`);
+    await tx.aiConcept.create({ data: { submissionId, style, imageUrl, description } });
+  });
+
+  revalidatePath(`/contests/${submissionId}`);
 }
 
 export async function castVote(entryId: string, submissionId: string) {
